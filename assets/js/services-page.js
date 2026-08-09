@@ -1,6 +1,30 @@
 (function () {
   var categoryData = null;
 
+  function getDisplayCurrency() {
+    return (categoryData && categoryData.displayCurrency) || 'QAR';
+  }
+
+  function formatPrice(service) {
+    var currency = getDisplayCurrency();
+    var options = categoryData.currencyOptions || {};
+    var symbol = options[currency] || currency;
+    var value = service.prices ? service.prices[currency] : null;
+
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    return symbol + value;
+  }
+
+  function getBookLabel(lang, service) {
+    var baseLabel = lang === 'ar' ? 'احجز' : 'Book';
+    var price = formatPrice(service);
+
+    return price ? baseLabel + ' ' + price : (lang === 'ar' ? 'احجز الآن' : 'Book Now');
+  }
+
   // ── Render categories in the given language ────────────────────────────
   function renderServices(lang) {
     if (!categoryData) return;
@@ -39,11 +63,7 @@
       if (activeServices.length === 1) {
         // Single service → price + Book Now button
         var service = activeServices[0];
-        var bookLabel = lang === 'ar' ? 'احجز الآن' : 'Book Now';
-
-        var priceEl = document.createElement("p");
-        priceEl.className = "card-service-price";
-        priceEl.innerHTML = "<small>" + service.currency + "</small>" + service.price + ".<small>00</small>";
+        var bookLabel = getBookLabel(lang, service);
 
         var btn = document.createElement("a");
         btn.className = "btn btn-sm card-service-control";
@@ -53,7 +73,6 @@
           return function () { if (typeof chooseService === 'function') chooseService(s['name-en'], s['name-ar'], category['name-en'], category['name-ar']); };
         })(service);
 
-        article.appendChild(priceEl);
         article.appendChild(btn);
 
       } else {
@@ -63,12 +82,14 @@
 
         activeServices.forEach(function (service) {
           var serviceName = service['name-' + lang] || service['name-en'];
-          var bookLabel = lang === 'ar'
-            ? ('احجز ' + service.currency + service.price)
-            : ('Book ' + service.currency + service.price);
+          var bookLabel = getBookLabel(lang, service);
 
           var li = document.createElement("li");
-          li.textContent = serviceName;
+
+          var nameEl = document.createElement("span");
+          nameEl.className = "card-service-list-name";
+          nameEl.textContent = serviceName;
+          li.appendChild(nameEl);
 
           var bookBtn = document.createElement("a");
           bookBtn.className = "btn btn-xs card-service-price-list";

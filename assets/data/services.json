@@ -1,102 +1,109 @@
 {
-    "title-en": "Our Services",
-    "title-ar": "خدماتنا",
-    "description-en": "Establish your new amazing look with Barbershop services! From haircuts to hot shaves, you can experience the best level of barbering in the area.",
-    "description-ar": "أنشئ إطلالتك الجديدة الرائعة مع خدمات الحلاقة! من قصات الشعر إلى الحلاقة الساخنة، استمتع بأعلى مستوى من الحرفية في المنطقة.",
-    "button-en": "BOOK NOW",
-    "button-ar": "احجز الآن",
-    "bookNow-en": "Book Now",
-    "bookNow-ar": "احجز الآن",
-   "categories": [
+  "title-en": "Our Services",
+  "title-ar": "خدماتنا",
+  "description-en": "Discover our professional hair styling and treatment services, designed to help you create the look you love.",
+  "description-ar": "اكتشفي خدماتنا الاحترافية لتصفيف وعلاج الشعر، المصممة لمساعدتك على الحصول على الإطلالة التي تحبينها.",
+  "button-en": "BOOK NOW",
+  "button-ar": "احجز الآن",
+  "bookNow-en": "Book Now",
+  "bookNow-ar": "احجز الآن",
+  "displayCurrency": "USD",
+  "currencyOptions": {
+    "USD": "$",
+    "QAR": "QAR"
+  },
+  "categories": [
     {
+      "sku": "HS",
       "name-en": "Hair Styles",
       "name-ar": "تسريحات الشعر",
       "src": "hairStyles.png",
       "width": 150,
       "height": 62,
+      "sortOrder": 1,
+      "active": true,
       "services": [
         {
           "sku": "HS-001",
           "name-en": "Straight",
           "name-ar": "مستقيم",
-          "price": 25,
-          "currency": "$",
-          "active": true
+          "description-en": "Professional straight hair styling.",
+          "description-ar": "تصفيف احترافي للشعر المستقيم.",
+          "prices": {
+            "USD": 25,
+            "QAR": null
+          },
+          "durationMinutes": null,
+          "active": true,
+          "sortOrder": 1
         },
         {
           "sku": "HS-002",
           "name-en": "Curly",
           "name-ar": "مجعد",
-          "price": 20,
-          "currency": "$",
-          "active": true
+          "description-en": "Professional curly hair styling.",
+          "description-ar": "تصفيف احترافي للشعر المجعد.",
+          "prices": {
+            "USD": 20,
+            "QAR": null
+          },
+          "durationMinutes": null,
+          "active": true,
+          "sortOrder": 2
         },
         {
           "sku": "HS-003",
           "name-en": "Wavy",
           "name-ar": "متموج",
-          "price": 20,
-          "currency": "$",
-          "active": true
+          "description-en": "Professional wavy hair styling.",
+          "description-ar": "تصفيف احترافي للشعر المتموج.",
+          "prices": {
+            "USD": 20,
+            "QAR": null
+          },
+          "durationMinutes": null,
+          "active": true,
+          "sortOrder": 3
         }
       ]
     },
     {
+      "sku": "HT",
       "name-en": "Hair Treatments",
       "name-ar": "علاجات الشعر",
       "src": "hairTreatment.png",
       "width": 70,
       "height": 62,
+      "sortOrder": 2,
+      "active": true,
       "services": [
         {
           "sku": "HT-001",
           "name-en": "Keratin",
           "name-ar": "كيراتين",
-          "price": 125,
-          "currency": "$",
-          "active": true
+          "description-en": "Professional keratin hair treatment.",
+          "description-ar": "علاج كيراتين احترافي للشعر.",
+          "prices": {
+            "USD": 125,
+            "QAR": null
+          },
+          "durationMinutes": null,
+          "active": true,
+          "sortOrder": 1
         },
         {
           "sku": "T-002",
           "name-en": "Botox",
           "name-ar": "بوتوكس",
-          "price": 100,
-          "currency": "$",
-          "active": true
-        }
-      ]
-    },
-    {
-      "name-en": "Beard Trim",
-      "name-ar": "تهذيب اللحية",
-      "src": "icon-service-3-70x62.png",
-      "width": 70,
-      "height": 62,
-      "services": [
-        {
-          "sku": "HS-005",
-          "name-en": "Beard Trim",
-          "name-ar": "تهذيب اللحية",
-          "price": 35,
-          "currency": "$",
-          "active": true
-        }
-      ]
-    },
-    {
-      "name-en": "Mustache Trim",
-      "name-ar": "تهذيب الشارب",
-      "src": "icon-service-4-70x62.png",
-      "width": 70,
-      "height": 62,
-      "services": [
-        {
-          "sku": "HS-006",
-          "name-en": "Mustache Trim",
-          "name-ar": "تهذيب الشارب",
-          "price": 32,
-          "currency": "$",
-          "active": true
+          "description-en": "Professional hair botox treatment.",
+          "description-ar": "علاج بوتوكس احترافي للشعر.",
+          "prices": {
+            "USD": 100,
+            "QAR": null
+          },
+          "durationMinutes": null,
+          "active": true,
+          "sortOrder": 2
         }
       ]
     }

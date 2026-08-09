@@ -515,3 +515,22 @@ div#date-picker-container {
   flex-direction: column;
   gap: 10px; /* optional spacing between elements */
 }
+
+
+/* Service list for multi-service category cards.
+   Price is intentionally part of the Book button, matching the original design. */
+.card-service-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.card-service-list-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.card-service-price-list {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
