@@ -1,0 +1,104 @@
+{
+    "title-en": "Our Services",
+    "title-ar": "خدماتنا",
+    "description-en": "Establish your new amazing look with Barbershop services! From haircuts to hot shaves, you can experience the best level of barbering in the area.",
+    "description-ar": "أنشئ إطلالتك الجديدة الرائعة مع خدمات الحلاقة! من قصات الشعر إلى الحلاقة الساخنة، استمتع بأعلى مستوى من الحرفية في المنطقة.",
+    "button-en": "BOOK NOW",
+    "button-ar": "احجز الآن",
+    "bookNow-en": "Book Now",
+    "bookNow-ar": "احجز الآن",
+   "categories": [
+    {
+      "name-en": "Hair Styles",
+      "name-ar": "تسريحات الشعر",
+      "src": "hairStyles.png",
+      "width": 150,
+      "height": 62,
+      "services": [
+        {
+          "sku": "HS-001",
+          "name-en": "Straight",
+          "name-ar": "مستقيم",
+          "price": 25,
+          "currency": "$",
+          "active": true
+        },
+        {
+          "sku": "HS-002",
+          "name-en": "Curly",
+          "name-ar": "مجعد",
+          "price": 20,
+          "currency": "$",
+          "active": true
+        },
+        {
+          "sku": "HS-003",
+          "name-en": "Wavy",
+          "name-ar": "متموج",
+          "price": 20,
+          "currency": "$",
+          "active": true
+        }
+      ]
+    },
+    {
+      "name-en": "Hair Treatments",
+      "name-ar": "علاجات الشعر",
+      "src": "hairTreatment.png",
+      "width": 70,
+      "height": 62,
+      "services": [
+        {
+          "sku": "HT-001",
+          "name-en": "Keratin",
+          "name-ar": "كيراتين",
+          "price": 125,
+          "currency": "$",
+          "active": true
+        },
+        {
+          "sku": "T-002",
+          "name-en": "Botox",
+          "name-ar": "بوتوكس",
+          "price": 100,
+          "currency": "$",
+          "active": true
+        }
+      ]
+    },
+    {
+      "name-en": "Beard Trim",
+      "name-ar": "تهذيب اللحية",
+      "src": "icon-service-3-70x62.png",
+      "width": 70,
+      "height": 62,
+      "services": [
+        {
+          "sku": "HS-005",
+          "name-en": "Beard Trim",
+          "name-ar": "تهذيب اللحية",
+          "price": 35,
+          "currency": "$",
+          "active": true
+        }
+      ]
+    },
+    {
+      "name-en": "Mustache Trim",
+      "name-ar": "تهذيب الشارب",
+      "src": "icon-service-4-70x62.png",
+      "width": 70,
+      "height": 62,
+      "services": [
+        {
+          "sku": "HS-006",
+          "name-en": "Mustache Trim",
+          "name-ar": "تهذيب الشارب",
+          "price": 32,
+          "currency": "$",
+          "active": true
+        }
+      ]
+    }
+  ]
+}

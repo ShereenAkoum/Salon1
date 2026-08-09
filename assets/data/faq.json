@@ -1,0 +1,26 @@
+{
+  "title-en": "FAQ",
+  "title-ar": "الأسئلة الشائعة",
+  "description-en": "If you have any questions regarding the services our barbershop offers, feel free to browse this section of frequently asked questions.",
+  "description-ar": "إذا كانت لديك أي أسئلة بخصوص الخدمات التي يقدمها صالون الحلاقة لدينا، يمكنك تصفح قسم الأسئلة الشائعة.",
+  "faq": [
+    {
+      "question-en": "Is it OK if I am a few minutes late for my appointment?",
+      "question-ar": "هل يمكن أن أتأخر بضع دقائق عن موعدي؟",
+      "answer-en": "We schedule clients on the half-hour and we make full use of those 30 minutes with each client. If someone is 5 minutes late for their appointment, it affects every client after them, as well as the barber who is trying to stay on schedule...",
+      "answer-ar": "نحن نحدد المواعيد على نصف الساعة ونستفيد من كامل الثلاثين دقيقة مع كل زبون. إذا تأخر أحدهم خمس دقائق عن موعده، فإن ذلك يؤثر على جميع العملاء بعده وكذلك على الحلاق الذي يحاول الالتزام بالجدول..."
+    },
+    {
+      "question-en": "What is your appointment policy?",
+      "question-ar": "ما هي سياسة المواعيد لديكم؟",
+      "answer-en": "If you need to cancel your appointment, please do so as far in advance as possible, preferably at least one hour. Our appointment policy is listed on the appointment page.",
+      "answer-ar": "إذا كنت بحاجة إلى إلغاء موعدك، يرجى القيام بذلك في أقرب وقت ممكن، ويفضل قبل ساعة على الأقل. سياسة المواعيد لدينا مذكورة في صفحة المواعيد."
+    },
+    {
+      "question-en": "When do you take your last walk-in?",
+      "question-ar": "متى تستقبلون آخر زبون بدون موعد؟",
+      "answer-en": "Our walk-in list closes when there are as many customers waiting as we can serve before closing time. It may reopen if customers leave the line...",
+      "answer-ar": "تُغلق قائمة الزبائن بدون موعد عندما يكون هناك عدد من العملاء المنتظرين بقدر ما يمكننا خدمته قبل وقت الإغلاق. قد يُعاد فتحها إذا غادر بعض العملاء الطابور..."
+    }
+  ]
+}

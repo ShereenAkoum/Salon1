@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "title": "Voucher 1",
+    "image": "assets/images/vouchers/v1.jpeg",
+    "active": true
+  },
+  {
+    "id": 2,
+    "title": "Voucher 2",
+    "image": "assets/images/vouchers/v2.jpeg",
+    "active": true
+  },
+  {
+    "id": 3,
+    "title": "Voucher 3",
+    "image": "assets/images/vouchers/v3.jpeg",
+    "active": true
+  },
+  {
+    "id": 4,
+    "title": "Voucher 4",
+    "image": "assets/images/vouchers/v4.jpeg",
+    "active": true
+  }
+]

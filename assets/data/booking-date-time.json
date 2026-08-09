@@ -1,0 +1,68 @@
+{
+  "back-en": "Back",
+  "back-ar": "رجوع",
+  "title-en": "Choose a Date",
+  "title-ar": "اختر تاريخاً",
+  "description-en": "To complete your booking, please choose the date and time that fit you best. We will be glad to offer you top-notch barber services on the selected day.",
+  "description-ar": "لإتمام حجزك، يرجى اختيار التاريخ والوقت الأنسب لك. سيسعدنا تقديم أفضل خدمات الحلاقة في اليوم المحدد.",
+  "months": {
+    "en": [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    ],
+    "ar": [
+      "يناير",
+      "فبراير",
+      "مارس",
+      "أبريل",
+      "مايو",
+      "يونيو",
+      "يوليو",
+      "أغسطس",
+      "سبتمبر",
+      "أكتوبر",
+      "نوفمبر",
+      "ديسمبر"
+    ]
+  },
+  "days": {
+    "en": [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ],
+    "ar": [
+      "الأحد",
+      "الاثنين",
+      "الثلاثاء",
+      "الأربعاء",
+      "الخميس",
+      "الجمعة",
+      "السبت"
+    ]
+  },
+  "timeSlots": [
+    "10:00 - 11:00",
+    "11:00 - 12:00",
+    "12:00 - 13:00",
+    "13:00 - 14:00",
+    "14:00 - 15:00",
+    "15:00 - 16:00",
+    "16:00 - 17:00",
+    "17:00 - 18:00"
+  ]
+}

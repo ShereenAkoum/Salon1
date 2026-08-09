@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html class="wide wow-animation" lang="en" dir="ltr">
+
+<head>
+  <!-- Site Title-->
+  <title>Services</title>
+  
+  <!-- Stylesheets-->
+  <link rel="stylesheet" type="text/css"
+    href="//fonts.googleapis.com/css?family=Roboto+Mono:300,300italic,400,700%7CArvo:400,700">
+  <link rel="stylesheet" href="assets/fonts/telma/css/telma.css">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/custom.css">
+  <script>
+    (function () {
+      var lang = localStorage.getItem('siteLang') || 'en';
+      document.documentElement.setAttribute('lang', lang);
+      document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+      document.write('<style id="anti-flash">body{opacity:0!important;}</style>');
+    })();
+  </script>
+</head>
+
+<body>
+  <div class="page">
+    <main class="page-content" id="perspective">
+      <div class="content-wrapper">
+        <div id="page-header"></div>
+        <div id="wrapper">
+          <div class="page-title">
+            <div class="page-title-content">
+              <div class="shell">
+                <p class="page-title-header" data-i18n="nav.services"></p>
+              </div>
+            </div>
+          </div>
+          <section class="section-lg bg-periglacial-blue text-center">
+            <div class="shell">
+              <div class="range range-sm-center range-50">
+                <div class="cell-xs-12">
+                  <h1 data-i18n="categoryServices.title"></h1>
+                    <p class="large" data-i18n="categoryServices.description"></p>
+                </div>
+                <div class="cell-xs-12">
+                  <div class="range range-30" id="services-container">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <footer class="page-footer page-footer-default" id="footer-placeholder"></footer>
+
+        </div>
+        <div id="perspective-content-overlay"></div>
+      </div>
+      <!-- RD Navbar-->
+      <div class="rd-navbar-wrap" id="rdNavBar"></div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/js/supabase-client.js"></script>
+  <script src="assets/js/database-test.js"></script>
+  <script src="assets/js/site-loader.js"></script>
+  <script src="assets/js/core.min.js"></script>
+  <script src="assets/js/site-ui.js"></script>
+  <script src="assets/js/booking-flow.js"></script>
+  <script src="assets/js/services-page.js"></script>
+  <script src="assets/js/language.js"></script>
+</body>
+
+</html>

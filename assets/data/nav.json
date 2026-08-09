@@ -1,0 +1,22 @@
+{
+  "en": {
+    "home": "Home",
+    "services": "Services",
+    "about": "About",
+    "faq": "FAQ",
+    "contacts": "Contacts",
+    "hours": "Opening Hours",
+    "langSwitcherLabel": "العربية",
+    "vouchers": "Vouchers"
+  },
+  "ar": {
+    "home": "الرئيسية",
+    "services": "الخدمات",
+    "vouchers": "قسائم",
+    "about": "من نحن",
+    "faq": "الأسئلة الشائعة",
+    "contacts": "اتصل بنا",
+    "hours": "ساعات العمل",
+    "langSwitcherLabel": "English"
+  }
+}
