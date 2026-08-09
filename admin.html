@@ -21,6 +21,26 @@
     </form>
   </div>
 
+  <section id="crm-password-setup" class="crm-card crm-login crm-hidden" aria-labelledby="password-setup-title">
+    <div class="crm-login-mark">✓</div>
+    <div class="crm-section-label">Welcome to the salon CRM</div>
+    <h1 id="password-setup-title" class="crm-title">Create your password</h1>
+    <p class="crm-subtitle">Your invitation is confirmed. Choose a password to finish setting up your CRM account.</p>
+    <div id="password-setup-message" class="crm-message"></div>
+    <form id="password-setup-form">
+      <div class="crm-field">
+        <label for="setup-password">New password</label>
+        <input id="setup-password" type="password" minlength="8" autocomplete="new-password" required>
+        <span class="crm-small">Use at least 8 characters.</span>
+      </div>
+      <div class="crm-field" style="margin-top:16px">
+        <label for="setup-password-confirm">Confirm password</label>
+        <input id="setup-password-confirm" type="password" minlength="8" autocomplete="new-password" required>
+      </div>
+      <button class="crm-btn crm-btn-primary crm-btn-wide" type="submit">Create password <span>→</span></button>
+    </form>
+  </section>
+
   <main id="crm-app" class="crm-hidden">
     <div class="crm-layout">
       <aside class="crm-sidebar" id="crm-sidebar">
@@ -100,13 +120,21 @@
         <section id="view-users" class="crm-view crm-hidden" data-admin-only>
           <div class="crm-page-heading"><div><div class="crm-section-label">Access control</div><h2>Users & access</h2><p>Invite people who need access to the salon CRM.</p></div><button id="invite-user-btn" class="crm-btn crm-btn-primary">+ Invite user</button></div>
           <div class="crm-card"><div class="crm-info-banner"><b>Secure invitations</b><span>New users receive a Supabase email invitation. Their login account is created securely by Supabase; passwords are never stored in your salon tables.</span></div></div>
-          <div class="crm-card"><div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody id="users-table-body"></tbody></table></div></div>
+          <div class="crm-card"><div class="crm-table-wrap"><table class="crm-table"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="users-table-body"></tbody></table></div></div>
           <div id="user-form-card" class="crm-card crm-hidden">
             <div class="crm-section-label">New CRM user</div><h2>Invite a team member</h2><p class="crm-small">They will receive an email to finish setting up their account.</p>
             <form id="user-form"><div class="crm-form-grid">
               <div class="crm-field"><label>Full name</label><input id="user-name" required></div><div class="crm-field"><label>Email</label><input id="user-email" type="email" required></div>
               <div class="crm-field"><label>Role</label><select id="user-role"><option value="manager">Manager</option><option value="staff">Staff</option><option value="admin">Administrator</option></select></div>
             </div><div class="crm-form-actions"><button id="user-cancel" type="button" class="crm-btn crm-btn-secondary">Cancel</button><button type="submit" class="crm-btn crm-btn-primary">Send invitation</button></div></form>
+          </div>
+          <div id="user-edit-card" class="crm-card crm-hidden">
+            <div class="crm-section-label">Manage access</div><h2>Edit CRM user</h2><p class="crm-small" id="user-edit-email"></p>
+            <form id="user-edit-form"><div class="crm-form-grid">
+              <div class="crm-field"><label for="edit-user-name">Display name</label><input id="edit-user-name" required></div>
+              <div class="crm-field"><label for="edit-user-role">Role</label><select id="edit-user-role"><option value="manager">Manager</option><option value="staff">Staff</option><option value="admin">Administrator</option></select></div>
+              <label class="crm-field crm-check"><input id="edit-user-active" type="checkbox"> <span>Account active</span></label>
+            </div><div class="crm-form-actions"><button id="user-edit-cancel" type="button" class="crm-btn crm-btn-secondary">Cancel</button><button type="submit" class="crm-btn crm-btn-primary">Save changes</button></div></form>
           </div>
         </section>
 

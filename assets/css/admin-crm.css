@@ -78,3 +78,7 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 @media(max-width:1050px){.crm-stats{grid-template-columns:repeat(2,1fr)}.crm-dashboard-grid{grid-template-columns:1fr}.crm-main{padding-left:24px;padding-right:24px}}
 @media(max-width:760px){.crm-sidebar{transform:translateX(-100%);transition:.22s ease;box-shadow:20px 0 50px rgba(0,0,0,.15)}.crm-sidebar.open{transform:translateX(0)}.crm-main{margin-left:0;width:100%;padding:0 16px 50px}.crm-mobile-menu{display:block;border:1px solid var(--crm-line);background:#fff;border-radius:10px;width:38px;height:38px;font-size:18px}.crm-topbar{height:78px}.crm-user-pill{max-width:180px;overflow:hidden}.crm-user-pill span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.crm-welcome{align-items:flex-start;flex-direction:column;padding:25px}.crm-stats{grid-template-columns:1fr 1fr}.crm-quick-grid{grid-template-columns:1fr}.crm-page-heading{align-items:flex-start;flex-direction:column}.crm-page-heading .crm-btn{width:100%}}
 @media(max-width:480px){.crm-stats{grid-template-columns:1fr}.crm-topbar h1{font-size:21px}}
+
+.crm-actions-inline{display:flex;gap:7px;flex-wrap:wrap}.crm-btn-small{padding:7px 10px;font-size:12px;border-radius:9px}
+#crm-password-setup{max-width:460px}
+#crm-password-setup .crm-field{margin-top:12px}

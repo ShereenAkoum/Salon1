@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     const email = String(body.email || "").trim().toLowerCase();
     const fullName = String(body.full_name || "").trim();
     const role = String(body.role || "staff");
+    const requestedRedirect = String(body.redirect_to || "https://shereenakoum.github.io/Salon1/admin.html?invite=1").trim();
 
     if (!email || !fullName) throw new Error("Name and email are required.");
     if (!["admin", "manager", "staff"].includes(role)) {
@@ -41,9 +42,20 @@ Deno.serve(async (req) => {
 
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
+    let redirectTo = "https://shereenakoum.github.io/Salon1/admin.html?invite=1";
+    try {
+      const url = new URL(requestedRedirect);
+      if (url.protocol === "https:" && url.hostname === "shereenakoum.github.io" && url.pathname.endsWith("/admin.html")) {
+        redirectTo = url.toString();
+      }
+    } catch (_) {
+      // Keep the safe production fallback.
+    }
+
     const { data: invited, error: inviteError } =
       await admin.auth.admin.inviteUserByEmail(email, {
         data: { full_name: fullName, crm_role: role },
+        redirectTo,
       });
 
     if (inviteError) throw inviteError;
