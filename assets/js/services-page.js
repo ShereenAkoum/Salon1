@@ -2,27 +2,66 @@
   var categoryData = null;
 
   function getDisplayCurrency() {
-    return (categoryData && categoryData.displayCurrency) || 'QAR';
+    return (categoryData && categoryData.displayCurrency) || 'USD';
   }
 
-  function formatPrice(service) {
-    var currency = getDisplayCurrency();
-    var options = categoryData.currencyOptions || {};
-    var symbol = options[currency] || currency;
-    var value = service.prices ? service.prices[currency] : null;
+  function getCurrencyLabel(currency, lang) {
+    var options = (categoryData && categoryData.currencyOptions) || {};
+    var option = options[currency];
 
-    if (value === null || value === undefined || value === '') {
+    // New format: { USD: { en: "$", ar: "$" }, QAR: { en: "QAR", ar: "ريال" } }
+    if (option && typeof option === 'object') {
+      return option[lang] || option.en || currency;
+    }
+
+    // Backward compatibility with the old format: { USD: "$", QAR: "QAR" }
+    return option || currency;
+  }
+
+  function getPriceValue(service, currency) {
+    var prices = service && service.prices ? service.prices : {};
+    var value = prices[currency];
+
+    // Only use the price explicitly entered for the selected currency.
+    // There is intentionally no automatic currency conversion.
+    if (value !== null && value !== undefined && value !== '') {
+      var numericValue = Number(value);
+      return Number.isNaN(numericValue) ? null : numericValue;
+    }
+
+    return null;
+  }
+
+  function formatPrice(service, lang) {
+    var currency = getDisplayCurrency();
+    var value = getPriceValue(service, currency);
+
+    if (value === null || Number.isNaN(value)) {
       return null;
     }
 
-    return symbol + value;
+    var label = getCurrencyLabel(currency, lang);
+    var roundedValue = currency === 'QAR'
+      ? Math.round(value)
+      : Number(value.toFixed(2));
+
+    // USD: $25
+    // QAR in English: 25QAR
+    // QAR in Arabic: 25 ريال
+    if (currency === 'QAR') {
+      return roundedValue + (lang === 'ar' ? ' ' : '') + label;
+    }
+
+    return label + roundedValue;
   }
 
   function getBookLabel(lang, service) {
     var baseLabel = lang === 'ar' ? 'احجز' : 'Book';
-    var price = formatPrice(service);
+    var price = formatPrice(service, lang);
 
-    return price ? baseLabel + ' ' + price : (lang === 'ar' ? 'احجز الآن' : 'Book Now');
+    return price
+      ? baseLabel + ' ' + price
+      : (lang === 'ar' ? 'احجز الآن' : 'Book Now');
   }
 
   // ── Render categories in the given language ────────────────────────────

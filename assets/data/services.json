@@ -9,8 +9,14 @@
   "bookNow-ar": "احجز الآن",
   "displayCurrency": "USD",
   "currencyOptions": {
-    "USD": "$",
-    "QAR": "QAR"
+    "USD": {
+      "en": "$",
+      "ar": "$"
+    },
+    "QAR": {
+      "en": "QAR",
+      "ar": "ريال"
+    }
   },
   "categories": [
     {

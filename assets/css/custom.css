@@ -534,3 +534,39 @@ div#date-picker-container {
   flex: 0 0 auto;
   white-space: nowrap;
 }
+
+
+/* Service buttons: fixed, consistent size while allowing USD/QAR/Arabic labels. */
+.card-service-list .card-service-price-list,
+.card-service-list li .btn {
+  width: 120px !important;
+  min-width: 120px !important;
+  max-width: 120px !important;
+  min-height: 36px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.card-service-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-service-list-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+html[lang="ar"] .card-service-list .card-service-price-list,
+html[lang="ar"] .card-service-list li .btn {
+  width: 120px !important;
+  min-width: 120px !important;
+  max-width: 120px !important;
+}
