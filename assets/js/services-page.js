@@ -81,6 +81,14 @@
     return label + roundedValue;
   }
 
+  function openBookingForService(service) {
+    try {
+      localStorage.setItem('service', service['name-en'] || '');
+      localStorage.setItem('bookingServiceSku', service.sku || '');
+    } catch (e) {}
+    window.location.href = 'booking.html';
+  }
+
   function getBookLabel(lang, service) {
     var baseLabel = lang === 'ar' ? 'احجز' : 'Book';
     var price = formatPrice(service, lang);
@@ -289,14 +297,7 @@
         btn.textContent = bookLabel;
         btn.onclick = (function (s) {
           return function () {
-            if (typeof chooseService === 'function') {
-              chooseService(
-                s['name-en'],
-                s['name-ar'],
-                category['name-en'],
-                category['name-ar']
-              );
-            }
+            openBookingForService(s);
           };
         })(service);
 
@@ -326,14 +327,7 @@
           bookBtn.textContent = bookLabel;
           bookBtn.onclick = (function (s) {
             return function () {
-              if (typeof chooseService === 'function') {
-                chooseService(
-                  s['name-en'],
-                  s['name-ar'],
-                  category['name-en'],
-                  category['name-ar']
-                );
-              }
+              openBookingForService(s);
             };
           })(service);
 

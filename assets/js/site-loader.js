@@ -11,14 +11,41 @@
 
             container.innerHTML = vouchers
                 .filter(v => v.active)
-                .map(v => `
-                    <a href="booking-date-time.html"
+                .map(v => {
+                    const payload = JSON.stringify({
+                        id: v.id,
+                        sku: v.sku || ('V-' + String(v.id).padStart(3, '0')),
+                        title: v.title,
+                        image: v.image,
+                        durationMinutes: Number(v.durationMinutes || 30),
+                        price: v.price == null || v.price === '' ? null : Number(v.price)
+                    }).replace(/"/g, '&quot;');
+
+                    return `
+                    <a href="booking.html"
                        class="voucher-card"
-                       onclick="localStorage.setItem('voucher','${v.title}')">
+                       data-voucher='${payload}'
+                       aria-label="Book ${String(v.title).replace(/"/g, '&quot;')}">
                         <img src="${v.image}" alt="${v.title}">
-                    </a>
-                `)
+                    </a>`;
+                })
                 .join('');
+
+            container.querySelectorAll('[data-voucher]').forEach(card => {
+                card.addEventListener('click', function () {
+                    try {
+                        const voucher = JSON.parse(card.getAttribute('data-voucher'));
+                        // A voucher is a standalone booking item: selecting a
+                        // voucher replaces any previous service/voucher draft.
+                        localStorage.removeItem('salonBookingDraft');
+                        localStorage.removeItem('bookingServiceSku');
+                        localStorage.removeItem('service');
+                        localStorage.setItem('bookingVoucher', JSON.stringify(voucher));
+                    } catch (e) {
+                        console.error('Could not prepare voucher booking:', e);
+                    }
+                });
+            });
         })
         .catch(err => console.error('Error loading vouchers:', err));
 }

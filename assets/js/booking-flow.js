@@ -1,632 +1,698 @@
-// ─── Navigation helpers ───────────────────────────────────────────────────────
+(function(){
+  'use strict';
 
-function getParams() {
-    return new URLSearchParams(window.location.search);
-}
+  const state = {
+    services: [],
+    categories: [],
+    bookings: [],
+    schedule: null,
+    selected: [],
+    voucher: null,
+    date: null,
+    start: null,
+    step: 1,
+    config: null,
+    initialized: false,
+    viewYear: null,
+    viewMonth: null,
+    lang: document.documentElement.getAttribute('lang') || localStorage.getItem('siteLang') || 'en',
+    currency: 'USD'
+  };
 
-function buildBackLink(currentStep) {
-    const service = localStorage.getItem("service");
-    const voucher = localStorage.getItem("voucher");
-    let targetStep = "";
-    let params = [];
+  const $ = id => document.getElementById(id);
+  const t = (en, ar) => state.lang === 'ar' ? ar : en;
 
-    if (currentStep === "booking-date-time") {
-        targetStep = "services.html";
-        localStorage.removeItem("service");
-        localStorage.removeItem("serviceDisplay");
-        localStorage.removeItem("serviceCategory");
-        localStorage.removeItem("serviceCategoryDisplay");
-        localStorage.removeItem("selectedDates");
+  function money(value){
+    if (value === null || value === undefined || value === '') return '—';
+    const symbol = (state.config && state.config.currencyOptions && state.config.currencyOptions[state.currency])
+      ? state.config.currencyOptions[state.currency][state.lang] : (state.currency === 'QAR' ? (state.lang==='ar'?'ريال':'QAR') : '$');
+    return state.lang === 'ar' ? `${value} ${symbol}` : `${value} ${symbol}`;
+  }
 
-        if (voucher) params.push(`voucher=${encodeURIComponent(voucher)}`);
-    }
-    if (currentStep === "booking-review") {
-        targetStep = "booking-date-time.html";
-        if (service) params.push(`service=${encodeURIComponent(service)}`);
-        localStorage.removeItem("selectedDates");
-    }
-    if (params.length > 0) targetStep += "?" + params.join("&");
-    return targetStep;
-}
+  function price(service){
+    if(service.prices && service.prices[state.currency] != null) return Number(service.prices[state.currency]);
+    if(service.price != null) return Number(service.price);
+    return null;
+  }
 
-/**
- * Called by services.html when a service is selected.
- * @param {string} serviceName             English name — used as the form submission value
- * @param {string} displayName             Localized name — shown in the UI on checkout
- *                                         Pass the same as serviceName if no translation available.
- * @param {string} [categoryName]          English category name — used as the form submission value
- * @param {string} [categoryDisplayName]   Localized category name — shown in the UI on checkout
- */
-function chooseService(serviceName, displayName, categoryName, categoryDisplayName) {
-    localStorage.setItem("service", serviceName);
-    localStorage.setItem("serviceDisplay", displayName || serviceName);
+  function duration(service){ return Number(service.durationMinutes || 30); }
 
-    var voucher = localStorage.getItem('voucher');
+  async function loadJSON(path){
+    const r=await fetch(path,{cache:'no-store'});
+    if(!r.ok) throw new Error('Could not load '+path);
+    return r.json();
+  }
 
-    if (categoryName) {
-        localStorage.setItem("serviceCategory", categoryName);
-        localStorage.setItem("serviceCategoryDisplay", categoryDisplayName || categoryName);
-    } else {
-        localStorage.removeItem("serviceCategory");
-        localStorage.removeItem("serviceCategoryDisplay");
-    }
+  async function init(){
+    try{
+      const [services, config, bookings, schedule, vouchers] = await Promise.all([
+        loadJSON('assets/data/services.json'),
+        loadJSON('assets/data/booking-date-time.json'),
+        loadJSON('assets/data/bookings.json').catch(()=>({bookings:[]})),
+        loadJSON('assets/data/salon-schedule.json').catch(()=>({monthlySchedule:{}})),
+        loadJSON('assets/data/vouchers.json').catch(()=>[])
+      ]);
+      state.config=config;
+      state.currency=services.displayCurrency || 'USD';
+      state.categories=services.categories || [];
+      state.services=state.categories.flatMap(c => (c.services||[]).filter(s=>s.active).map(s=>({...s,category:c})));
 
-    const baseUrl = `booking-date-time.html?service=${encodeURIComponent(serviceName)}`;
-    window.location.href = voucher ? `${baseUrl}&voucher=${encodeURIComponent(voucher)}` : baseUrl;
-
-}
-
-// ─── Step 2: Selection state ──────────────────────────────────────────────────
-
-/**
- * Each entry: {
- *   isoKey:      "2026-06-03",
- *   time:        "10:00 - 11:00",
- *   displayHTML: "<strong>Sunday June 3 2026</strong> &nbsp;·&nbsp; <span dir=\"ltr\">10:00 - 11:00</span>"
- * }
- * displayHTML is built once at selection time in the current language and stored as-is.
- * Step 3 renders it directly — no rebuild needed.
- */
-function getSelections() {
-    try { return JSON.parse(localStorage.getItem("selectedDates")) || []; }
-    catch (e) { return []; }
-}
-
-function saveSelections(sel) {
-    localStorage.setItem("selectedDates", JSON.stringify(sel));
-}
-
-/**
- * Builds both the English and Arabic label strings from config at the moment of selection.
- * Only called inside toggleDateSlot — never called again after that.
- *
- * @returns {{ en: string, ar: string }}
- */
-function buildLocalizedLabels(isoKey, bookingDateTimeConfig) {
-    const date = new Date(isoKey + 'T12:00:00');
-    const dayNum = date.getDate();
-    const year = date.getFullYear();
-
-    function labelFor(lang) {
-        const months = (bookingDateTimeConfig && bookingDateTimeConfig.months && bookingDateTimeConfig.months[lang])
-            || (bookingDateTimeConfig && bookingDateTimeConfig.months && bookingDateTimeConfig.months['en'])
-            || [];
-        const days = (bookingDateTimeConfig && bookingDateTimeConfig.days && bookingDateTimeConfig.days[lang])
-            || (bookingDateTimeConfig && bookingDateTimeConfig.days && bookingDateTimeConfig.days['en'])
-            || [];
-        const monthName = months[date.getMonth()] || '';
-        const dayName = days[date.getDay()] || '';
-        return lang !== 'en'
-            ? `${dayName} ${dayNum} ${monthName} ${year}`
-            : `${dayName} ${monthName} ${dayNum} ${year}`;
-    }
-
-    return { en: labelFor('en'), ar: labelFor('ar') };
-}
-
-/**
- * Called by booking-date-time.js on slot click.
- * Builds and stores displayHTML at selection time so it never needs rebuilding.
- *
- * @param {string} timeSlot   e.g. "10:00 - 11:00"
- * @param {string} isoKey     e.g. "2026-06-03"
- * @param {string} dayNum     e.g. "3"
- * @param {string} dayName    e.g. "Sunday"
- * @param {string} monthLabel e.g. "June 2026"
- */
-function toggleDateSlot(timeSlot, isoKey, dayNum, dayName, monthLabel) {
-    let selections = getSelections();
-    const idx = selections.findIndex(s => s.isoKey === isoKey);
-
-    // Build display strings for both languages right now
-    const labels = buildLocalizedLabels(isoKey, window._bookingDateTimeConfig);
-    const displayHTML_en = `<strong>${labels.en}</strong> &nbsp;·&nbsp; <span dir="ltr">${timeSlot}</span>`;
-    const displayHTML_ar = `<strong>${labels.ar}</strong> &nbsp;·&nbsp; <span dir="ltr">${timeSlot}</span>`;
-
-    if (idx !== -1 && selections[idx].time === timeSlot) {
-        // Clicking the same slot again → deselect
-        selections.splice(idx, 1);
-    } else if (idx !== -1) {
-        // Different slot on same date → update time + rebuild display
-        selections[idx].time = timeSlot;
-        selections[idx].displayHTML_en = displayHTML_en;
-        selections[idx].displayHTML_ar = displayHTML_ar;
-    } else {
-        // New date → add entry with pre-built displays
-        selections.push({ isoKey, time: timeSlot, displayHTML_en, displayHTML_ar });
-    }
-
-    saveSelections(selections);
-    refreshTimeSlotUI();
-    renderSummary();
-    updateContinueButton();
-}
-
-/**
- * Scoped entirely by isoKey — finds the exact panel using data-iso-key.
- */
-function refreshTimeSlotUI() {
-    const selections = getSelections();
-
-    document.querySelectorAll(".date-picker-list a").forEach(a => a.classList.remove("selected-slot"));
-    document.querySelectorAll(".date-picker-date").forEach(el => el.classList.remove("has-selection"));
-
-    selections.forEach(sel => {
-        const panel = document.querySelector(
-            `.rd-material-tabs__container > div[data-iso-key="${sel.isoKey}"]`
-        );
-        if (!panel) return;
-
-        panel.querySelectorAll(".date-picker-list a").forEach(a => {
-            if (a.textContent.trim() === sel.time) {
-                a.classList.add("selected-slot");
-            }
-        });
-
-        const tabsWidget = panel.closest(".rd-material-tabs");
-        if (!tabsWidget) return;
-        tabsWidget.querySelectorAll(".date-picker-date[data-iso-key]").forEach(tab => {
-            if (tab.dataset.isoKey === sel.isoKey) {
-                tab.classList.add("has-selection");
-            }
-        });
-    });
-}
-
-// ─── Summary panel + Continue button ─────────────────────────────────────────
-
-function removeSelection(isoKey) {
-    let selections = getSelections();
-    selections = selections.filter(s => s.isoKey !== isoKey);
-    saveSelections(selections);
-    refreshTimeSlotUI();
-    renderSummary();
-    updateContinueButton();
-}
-
-// Heading strings per language
-var _summaryHeadings = {
-    en: { one: 'appointment selected for', many: 'appointments selected for' },
-    ar: { one: 'موعد محدد لخدمة', many: 'مواعيد محددة لخدمة' }
-};
-
-/**
- * Renders the summary panel using the pre-built displayHTML stored in each selection.
- * No config or label rebuilding needed.
- */
-function renderSummary() {
-    const panel = document.getElementById("selection-summary");
-    if (!panel) return;
-    const selections = getSelections();
-
-    if (selections.length === 0) {
-        panel.style.display = "none";
-        panel.innerHTML = "";
-        return;
-    }
-
-    panel.style.display = "block";
-    panel.innerHTML = "";
-
-    const lang = localStorage.getItem('siteLang') || 'en';
-    const params = getParams();
-
-    // Always keep the raw service reference
-    const service = params.get("service") || localStorage.getItem("service") || "";
-
-    // Decide which values to use for display
-    let serviceDisplay, categoryDisplay;
-
-    if (lang === "en") {
-        serviceDisplay = service || "Not selected";
-        categoryDisplay = localStorage.getItem("serviceCategory") || "";
-    } else {
-        serviceDisplay = localStorage.getItem("serviceDisplay") || service || "غير محدد";
-        categoryDisplay = localStorage.getItem("serviceCategoryDisplay") || localStorage.getItem("serviceCategory") || "";
-    }
-    const h = _summaryHeadings[lang] || _summaryHeadings['en'];
-
-    if (lang === 'ar') {
-        panel.style.setProperty("direction", "rtl", "important");
-        panel.style.setProperty("text-align", "right", "important");
-    }
-
-    const heading = document.createElement("p");
-    heading.textContent = selections.length === 1
-        ? `1 ${h.one} ${categoryDisplay + " : " + serviceDisplay}`
-        : `${selections.length} ${h.many} ${categoryDisplay + " : " + serviceDisplay}`;
-    heading.style.cssText = "font-weight:600; margin:0 0 12px; color:#1a3a6b; font-size:13px; text-transform:uppercase; letter-spacing:.05em;";
-    panel.appendChild(heading);
-
-    const sorted = [...selections].sort((a, b) => a.isoKey.localeCompare(b.isoKey));
-    sorted.forEach(sel => {
-        const row = document.createElement("div");
-        row.style.cssText = "display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid #dde3f0; border-radius:6px; padding:10px 14px; margin-bottom:8px;";
-
-        const text = document.createElement("span");
-        text.style.cssText = "font-size:13px; color:#333;";
-        // Use the language-appropriate pre-built HTML string
-        text.innerHTML = lang === 'ar' ? sel.displayHTML_ar : sel.displayHTML_en;
-
-        const del = document.createElement("button");
-        del.innerHTML = "&#10005;";
-        del.title = lang === 'ar' ? 'حذف' : 'Remove';
-        del.style.cssText = "background:none; border:none; cursor:pointer; color:#999; font-size:16px; line-height:1; padding:0 0 0 12px; flex-shrink:0; transition:color .2s;";
-        del.addEventListener("mouseenter", () => del.style.color = "#c0392b");
-        del.addEventListener("mouseleave", () => del.style.color = "#999");
-        del.addEventListener("click", () => removeSelection(sel.isoKey));
-
-        row.appendChild(text);
-        row.appendChild(del);
-        panel.appendChild(row);
-    });
-}
-
-function updateContinueButton() {
-    const btn = document.getElementById("continue-btn");
-    if (!btn) return;
-    const count = getSelections().length;
-    btn.disabled = count === 0;
-    const lang = document.documentElement.getAttribute("lang") || "en";
-    const _continueLabels = { en: "Continue", ar: "متابعة" };
-    const label = _continueLabels[lang] || _continueLabels["en"];
-    btn.innerHTML = `${label}<span class="continue-count">${count > 0 ? " (" + count + ")" : ""}</span>`;
-}
-
-function injectSummaryAndContinue() {
-    const container = document.getElementById("date-picker-container");
-    if (!container || document.getElementById("selection-summary")) return;
-
-    const wrapper = document.createElement("div");
-    wrapper.style.cssText = "margin-top: 30px; padding-bottom: 20px;";
-
-    const summary = document.createElement("div");
-    summary.id = "selection-summary";
-    summary.style.cssText = [
-        "display:none",
-        "background:#f4f6fb",
-        "border-radius:10px",
-        "padding:18px 20px",
-        "margin-bottom:16px",
-        "text-align:left",
-        "max-width:600px",
-        "margin-left:auto",
-        "margin-right:auto",
-    ].join(";");
-
-    const btn = document.createElement("button");
-    btn.id = "continue-btn";
-    btn.className = "btn btn-sm btn-primary btn-circle";
-    btn.disabled = true;
-    btn.style.cssText = "display:block; margin:0 auto;";
-
-    const _continueLabels = { en: "Continue", ar: "متابعة" };
-    function _updateContinueLabel() {
-        const lang = document.documentElement.getAttribute("lang") || "en";
-        const count = getSelections().length;
-        const label = _continueLabels[lang] || _continueLabels["en"];
-        btn.innerHTML = `${label}<span class="continue-count">${count > 0 ? " (" + count + ")" : ""}</span>`;
-    }
-    _updateContinueLabel();
-    document.addEventListener("langChanged", _updateContinueLabel);
-
-    btn.addEventListener("click", function () {
-        if (getSelections().length === 0) return;
-        const service = getParams().get("service") || localStorage.getItem("service");
-        window.location.href = `booking-review.html?service=${encodeURIComponent(service)}`;
-    });
-
-    wrapper.appendChild(summary);
-    wrapper.appendChild(btn);
-    container.after(wrapper);
-}
-
-/** Called by booking-date-time.js after render completes. */
-function onDatePickerReady(bookingDateTimeConfig) {
-    if (bookingDateTimeConfig) window._bookingDateTimeConfig = bookingDateTimeConfig;
-    injectSummaryAndContinue();
-    refreshTimeSlotUI();
-    renderSummary();
-    updateContinueButton();
-}
-
-// ─── Step 3 ───────────────────────────────────────────────────────────────────
-
-/**
- * Populates step 3 entirely from stored selections.
- * Uses sel.displayHTML directly — no buildLocalizedLabel calls.
- */
-function populateBookingForm() {
-    const lang = document.documentElement.getAttribute("lang") || "en";
-
-    const params = getParams();
-    const service = params.get("service") || localStorage.getItem("service");
-    const selections = getSelections();
-    const voucher = localStorage.getItem("voucher");
-
-    // Decide which values to use based on language
-    let serviceDisplay, categoryDisplay;
-
-    if (lang === "en") {
-        serviceDisplay = service || "Not selected";
-        categoryDisplay = localStorage.getItem("serviceCategory") || "";
-    } else {
-        serviceDisplay = localStorage.getItem("serviceDisplay") || service || "غير محدد";
-        categoryDisplay = localStorage.getItem("serviceCategoryDisplay") || localStorage.getItem("serviceCategory") || "";
-    }
-
-    // Update visible blocks
-    const serviceName = document.querySelector(".service-name");
-    const serviceBlock = serviceName ? serviceName.closest(".box-contacts-block") : null;
-
-    if (service != "null") {
-        if (serviceName) {
-            if (categoryDisplay === serviceDisplay) {
-                serviceName.textContent = serviceDisplay;
-                localStorage.removeItem("serviceCategoryDisplay");
-                localStorage.removeItem("serviceCategory");
-                categoryDisplay = "";
-            } else {
-                serviceName.textContent = categoryDisplay == "" ? serviceDisplay : categoryDisplay + " : " + serviceDisplay;
-            }
+      // A voucher is represented as a normal booking item so the existing
+      // date/time, availability, review, local-booking and Formspree logic
+      // can be reused without creating a second booking flow.
+      const rawVoucher=localStorage.getItem('bookingVoucher');
+      let pendingVoucher=null;
+      if(rawVoucher){
+        try {
+          const parsed=JSON.parse(rawVoucher);
+          const source=(Array.isArray(vouchers)?vouchers:[]).find(v =>
+            String(v.id)===String(parsed.id) ||
+            String(v.sku||'')===String(parsed.sku||'')
+          ) || parsed;
+          if(source && source.active !== false){
+            pendingVoucher={
+              id:source.id,
+              sku:source.sku || ('V-'+String(source.id).padStart(3,'0')),
+              'name-en':source.title || 'Voucher',
+              'name-ar':source.title || 'Voucher',
+              'description-en':'Voucher',
+              'description-ar':'قسيمة',
+              prices:{USD: source.price == null ? null : Number(source.price), QAR: source.priceQar == null ? null : Number(source.priceQar)},
+              durationMinutes:Number(source.durationMinutes || 30),
+              active:true,
+              isVoucher:true,
+              voucherId:source.id,
+              category:{id:'voucher', 'name-en':'Voucher', 'name-ar':'قسيمة'}
+            };
+          }
+        } catch(e) {
+          console.warn('Could not read bookingVoucher:',e);
         }
+      }
 
-        if (serviceBlock) serviceBlock.style.display = "";
-    } else {
-        if (serviceBlock) serviceBlock.style.display = "none";
+      state.selected=state.selected.filter(sku=>state.services.some(s=>s.sku===sku));
+      state.bookings=bookings.bookings || [];
+      state.schedule=schedule || {monthlySchedule:{}};
+      const saved=localStorage.getItem('salonBookingDraft');
+      if(saved){ try { const d=JSON.parse(saved); state.selected=d.selected||[]; state.date=d.date||null; state.start=d.start||null; } catch(e){} }
+
+      if(pendingVoucher){
+        // Voucher bookings are standalone: exactly one voucher can be active.
+        state.voucher=pendingVoucher;
+        state.services.push(pendingVoucher);
+        state.selected=[pendingVoucher.sku];
+        state.date=null;
+        state.start=null;
+        localStorage.removeItem('bookingVoucher');
+        saveDraft();
+      }
+
+      const initialView = state.date ? new Date(state.date+'T12:00:00') : new Date();
+      setViewMonth(initialView.getFullYear(), initialView.getMonth());
+      if(!state.selected.length){
+        const sku=localStorage.getItem('bookingServiceSku');
+        if(sku){
+          const found=state.services.find(s=>s.sku===sku);
+          if(found) state.selected=[found.sku];
+          localStorage.removeItem('bookingServiceSku');
+        }
+      }
+      if(!state.selected.length){
+        const legacy=localStorage.getItem('service');
+        if(legacy){
+          const found=state.services.find(s=>s['name-en']===legacy || s['name-ar']===legacy);
+          if(found) state.selected=[found.sku];
+        }
+      }
+      state.initialized=true;
+      render();
+      showStep(state.voucher ? 2 : 1);
+      document.body.classList.add('booking-ready');
+    }catch(e){
+      console.error(e);
+      $('booking-app').innerHTML='<div class="booking-error">Unable to load booking information. Please try again.</div>';
+    }
+  }
+
+  function saveDraft(){
+    localStorage.setItem('salonBookingDraft',JSON.stringify({selected:state.selected,date:state.date,start:state.start}));
+  }
+
+  function getService(sku){ return state.services.find(s=>s.sku===sku); }
+  function selectedServices(){ return state.selected.map(getService).filter(Boolean); }
+  function total(){ return selectedServices().reduce((a,s)=>a+(price(s)||0),0); }
+  function totalMinutes(){ return selectedServices().reduce((a,s)=>a+duration(s),0); }
+
+  function render(){
+    renderServices();
+    renderCalendar();
+    renderTimeSlots();
+    renderSummaries();
+    bindEvents();
+    applyTranslations();
+  }
+
+  function renderServices(){
+    const wrap=$('booking-service-categories'); if(!wrap) return;
+    wrap.innerHTML='';
+
+    if(state.voucher){
+      const s=state.voucher;
+      const section=document.createElement('section');
+      section.className='booking-category booking-voucher-category';
+      section.innerHTML=`<div class="booking-category-head"><div><span class="category-kicker">${esc(t('VOUCHER','قسيمة'))}</span><h2>${esc(s['name-'+state.lang]||s['name-en'])}</h2></div><span class="category-count">1</span></div>`;
+      const grid=document.createElement('div'); grid.className='booking-service-grid';
+      const card=document.createElement('button');
+      card.type='button';
+      card.className='booking-service-card is-selected';
+      card.setAttribute('aria-pressed','true');
+      card.innerHTML=`<span class="service-check">✓</span><span class="service-card-content"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${duration(s)} ${t('min','دقيقة')}</small></span><span class="service-price">${price(s)==null ? t('Voucher','قسيمة') : money(price(s))}</span>`;
+      card.onclick=()=>{ state.selected=[s.sku]; state.date=null; state.start=null; saveDraft(); render(); showStep(2); };
+      grid.appendChild(card);
+      section.appendChild(grid);
+      wrap.appendChild(section);
+      return;
     }
 
-    const voucherName = document.querySelector(".voucher-name");
-    const voucherBlock = voucherName ? voucherName.closest(".box-contacts-block") : null;
-
-    if (voucher) {
-        if (voucherName) voucherName.textContent = voucher;
-        if (voucherBlock) voucherBlock.style.display = "";
-    } else {
-        if (voucherBlock) voucherBlock.style.display = "none";
-    }
-
-    const sorted = [...selections].sort((a, b) => a.isoKey.localeCompare(b.isoKey));
-    const dateBlock = document.querySelector(".box-contacts-block:nth-child(3) p");
-
-    if (sorted.length === 1) {
-        dateBlock.innerHTML = lang === "en" ? sorted[0].displayHTML_en : sorted[0].displayHTML_ar;
-    } else {
-        dateBlock.innerHTML = "";
-        const ul = document.createElement("ul");
-        ul.style.cssText = "list-style: none; padding: 0; margin: 0; text-align: center;";
-        sorted.forEach(sel => {
-            const li = document.createElement("li");
-            li.style.cssText = "margin-bottom: 6px;";
-            li.innerHTML = lang === "en" ? sel.displayHTML_en : sel.displayHTML_ar;
-            ul.appendChild(li);
-        });
-        dateBlock.appendChild(ul);
-    }
-
-    // Hidden fields for Formspree submission
-    const serviceField = document.querySelector("input[name='service']");
-    if (serviceField) serviceField.value = serviceDisplay || "";
-
-    const categoryField = document.querySelector("input[name='category']");
-    if (categoryField) categoryField.value = categoryDisplay || "";
-
-    const voucherField = document.querySelector("input[name='voucher']");
-    if (voucherField) voucherField.value = voucher || "";
-
-    const dateField = document.querySelector("input[name='date']");
-    let dateText = "";
-    if (dateField) {
-
-        dateText = sorted
-            .map(s => {
-                const tmp = document.createElement("span");
-                tmp.innerHTML = lang === "en" ? s.displayHTML_en : s.displayHTML_ar;
-                return tmp.textContent || tmp.innerText || "";
-            })
-            .join(" | ");
-        dateField.value = dateText;
-    }
-
-    // Build WhatsApp message text from the same booking data
-    window._whatsappMessage = buildWhatsAppMessage({
-        lang, categoryDisplay, serviceDisplay, voucher, dateText
+    state.categories.filter(c=>c.active!==false).forEach(cat=>{
+      const active=(cat.services||[]).filter(s=>s.active);
+      if(!active.length) return;
+      const section=document.createElement('section'); section.className='booking-category';
+      section.innerHTML=`<div class="booking-category-head"><div><span class="category-kicker">${esc(cat['name-en']||'')}</span><h2>${esc(cat['name-'+state.lang]||cat['name-en'])}</h2></div><span class="category-count">${active.length}</span></div>`;
+      const grid=document.createElement('div'); grid.className='booking-service-grid';
+      active.forEach(s=>{
+        const selected=state.selected.includes(s.sku);
+        const card=document.createElement('button'); card.type='button'; card.className='booking-service-card '+(selected?'is-selected':'');
+        card.setAttribute('aria-pressed',selected);
+        card.innerHTML=`<span class="service-check">${selected?'✓':'+'}</span><span class="service-card-content"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${duration(s)} ${t('min','دقيقة')}</small></span><span class="service-price">${money(price(s))}</span>`;
+        card.onclick=()=>toggleService(s.sku);
+        grid.appendChild(card);
+      });
+      section.appendChild(grid); wrap.appendChild(section);
     });
-}
+  }
 
-// ─── WhatsApp checkout ─────────────────────────────────────────────────────────
+  function toggleService(sku){
+    if(state.voucher) return;
+    if(state.selected.includes(sku)) state.selected=state.selected.filter(x=>x!==sku);
+    else state.selected.push(sku);
+    state.date=null; state.start=null; saveDraft(); render();
+    showStep(1);
+  }
 
-const SHOP_WHATSAPP_NUMBER = "96170123456"; // TODO: replace with real shop number
+  function setViewMonth(year, month){
+    state.viewYear = year;
+    state.viewMonth = month;
+  }
 
-function buildWhatsAppMessage({ lang, categoryDisplay, serviceDisplay, voucher, dateText }) {
-    const nameInput = document.getElementById("contact-full-name");
-    const phoneInput = document.getElementById("contact-phone");
-    const name = nameInput ? nameInput.value.trim() : "";
-    const phone = phoneInput ? phoneInput.value.trim() : "";
+  function getViewDate(){
+    if(Number.isInteger(state.viewYear) && Number.isInteger(state.viewMonth)){
+      return new Date(state.viewYear, state.viewMonth, 1);
+    }
+    if(state.date) return new Date(state.date+'T12:00:00');
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  }
 
-    if (lang === "ar") {
-        let lines = [
-            "حجز جديد",
-            serviceDisplay && serviceDisplay !== "null"
-                ? `الخدمة: ${categoryDisplay ? categoryDisplay + " : " : ""}${serviceDisplay}`
-                : null
-        ].filter(Boolean);
+  function renderCalendar(){
+    const wrap=$('booking-calendar'); if(!wrap || !state.config) return;
+    const today=new Date(); today.setHours(0,0,0,0);
+    const view=getViewDate();
+    renderCalendarView(view);
+  }
 
-        if (voucher) lines.push(`القسيمة: ${voucher}`);
-        lines.push(`التاريخ: ${dateText || "غير محدد"}`);
-        if (name) lines.push(`الاسم: ${name}`);
-        if (phone) lines.push(`الهاتف: ${phone}`);
+  function scheduleFor(iso){
+    const d=new Date(iso+'T12:00:00');
+    const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return (state.schedule && state.schedule.monthlySchedule && state.schedule.monthlySchedule[months[d.getMonth()]]) || {};
+  }
+  function slotClosed(iso,start){
+    const d=new Date(iso+'T12:00:00');
+    const ms=scheduleFor(iso);
+    if((ms.closedDays||[]).includes(d.getDay())) return true;
+    const override=(ms.closedDates||{})[String(d.getDate())];
+    if(override && override.fullyClose) return true;
+    const slots=state.config.timeSlots||[];
+    const idx=slots.indexOf(start);
+    const closed=(override && Array.isArray(override.closedTime)) ? override.closedTime : (ms.closedTime||[]);
+    return closed.includes(idx);
+  }
 
-        // WhatsApp supports \n for line breaks
-        return lines.join("\r\n");
+  function isBooked(iso, start, end){
+    return state.bookings.some(b=>{
+      if(b.date!==iso || !['confirmed','pending'].includes((b.status||'').toLowerCase())) return false;
+      return (b.items||[]).some(i=>overlap(start,end,i.start,i.end));
+    }) || getLocalBookings().some(b=>{
+      if(b.date!==iso) return false;
+      return (b.items||[]).some(i=>overlap(start,end,i.start,i.end));
+    });
+  }
+
+  function getLocalBookings(){ try{return JSON.parse(localStorage.getItem('salonTestBookings'))||[];}catch(e){return[];} }
+  function overlap(a,b,c,d){return toMin(a)<toMin(d)&&toMin(b)>toMin(c);}
+  function toMin(x){const p=x.split(':').map(Number);return p[0]*60+p[1];}
+
+  function validStart(iso,start){
+    if(slotClosed(iso,start)) return false;
+    const end=minutesToTime(toMin(start)+totalMinutes());
+    if(isBooked(iso,start,end)) return false;
+    // All occupied 30-minute intervals must be within salon's configured slots.
+    const slots=state.config.timeSlots||[];
+    for(let t=toMin(start);t<toMin(end);t+=30){
+      const point=minutesToTime(t);
+      if(!slots.includes(point) || slotClosed(iso,point)) return false;
+    }
+    return true;
+  }
+
+  function hasAnyAvailability(iso){
+    if(!state.selected.length) return true;
+    return (state.config.timeSlots||[]).some(s=>validStart(iso,s));
+  }
+
+  function renderTimeSlots(){
+    const wrap=$('booking-times'); if(!wrap || !state.config)return;
+    wrap.innerHTML='';
+    if(!state.date){wrap.innerHTML=`<div class="booking-empty">${t('Choose a date above to see available times.','اختاري التاريخ أعلاه لرؤية الأوقات المتاحة.')}</div>`;return;}
+    const slots=state.config.timeSlots||[];
+    const fragment=document.createDocumentFragment();
+    slots.forEach(start=>{
+      const end=minutesToTime(toMin(start)+totalMinutes());
+      const b=document.createElement('button');b.type='button';b.className='time-slot';
+      const available=validStart(state.date,start);
+      b.disabled=!available;b.classList.toggle('is-selected',start===state.start);
+      b.innerHTML=`<strong>${formatTime(start)}</strong><small>${available?formatTime(end):t('Unavailable','غير متاح')}</small>`;
+      b.onclick=()=>{state.start=start;saveDraft();renderTimeSlots();renderSummaries();};
+      fragment.appendChild(b);
+    });
+    wrap.appendChild(fragment);
+    $('selected-date-label').textContent=formatDate(state.date);
+  }
+
+  function renderSummaries(){
+    const count=$('selected-count'), totalEl=$('selected-total');
+    if(count) count.textContent=`${state.selected.length} ${t(state.selected.length===1?'service':'services',state.selected.length===1?'خدمة':'خدمات')}`;
+    if(totalEl) totalEl.textContent=money(total());
+
+    // Keep navigation buttons in sync with the current booking state.
+    // These buttons must NOT remain disabled from a static HTML attribute.
+    const continueServices = $('continue-services');
+    if (continueServices) {
+      continueServices.disabled = state.selected.length === 0;
+      continueServices.setAttribute('aria-disabled', String(continueServices.disabled));
     }
 
-    let lines = [
-        "New Booking",
-        serviceDisplay !== "null"
-            ? `Service: ${categoryDisplay ? categoryDisplay + " : " : ""}${serviceDisplay}`
-            : null
-    ].filter(Boolean); // removes null entries;
-
-    if (voucher) lines.push(`Voucher: ${voucher}`);
-    lines.push(`Date: ${dateText || "Not selected"}`);
-    if (name) lines.push(`Name: ${name}`);
-    if (phone) lines.push(`Phone: ${phone}`);
-    return lines.join("\n");
-}
-
-function sendBookingViaWhatsApp() {
-    const lang = document.documentElement.getAttribute("lang") || "en";
-    const params = getParams();
-    const service = params.get("service") || localStorage.getItem("service");
-    const selections = getSelections();
-
-    const voucher = localStorage.getItem("voucher");
-
-    const serviceDisplay = lang === "en"
-        ? (service || "Not selected")
-        : (localStorage.getItem("serviceDisplay") || service || "غير محدد");
-    const categoryDisplay = lang === "en"
-        ? (localStorage.getItem("serviceCategory") || "")
-        : (localStorage.getItem("serviceCategoryDisplay") || localStorage.getItem("serviceCategory") || "");
-
-    const sorted = [...selections].sort((a, b) => a.isoKey.localeCompare(b.isoKey));
-    const dateText = sorted
-        .map(s => {
-            const tmp = document.createElement("span");
-            tmp.innerHTML = lang === "en" ? s.displayHTML_en : s.displayHTML_ar;
-            return tmp.textContent || tmp.innerText || "";
-        })
-        .join(" | ");
-
-    const message = buildWhatsAppMessage({ lang, categoryDisplay, serviceDisplay, voucher, dateText });
-    const url = `https://wa.me/${SHOP_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-    window.open(url, "_blank");
-}
-
-function setupWhatsAppButton() {
-    const bookButton = document.querySelector("button[type='submit']");
-    if (!bookButton || document.getElementById("whatsapp-checkout-btn")) return;
-
-    const waButton = document.createElement("button");
-    waButton.type = "button";
-    waButton.id = "whatsapp-checkout-btn";
-    waButton.textContent = (document.documentElement.getAttribute("lang") === "ar")
-        ? "إرسال عبر واتساب"
-        : "Send via WhatsApp";
-    waButton.style.cssText = "margin-top: 10px; background-color: #25D366; color: #fff; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; width: 100%;";
-    waButton.addEventListener("click", sendBookingViaWhatsApp);
-
-    bookButton.insertAdjacentElement("afterend", waButton);
-}
-
-function setupBookingValidation() {
-    const nameInput = document.getElementById("contact-full-name");
-    const phoneInput = document.getElementById("contact-phone");
-    const bookButton = document.querySelector("button[type='submit']");
-    const form = document.querySelector("form");
-    if (!nameInput || !phoneInput || !bookButton || !form) return;
-
-    function validateForm() {
-        const nameValid = nameInput.value.trim().length > 0;
-        const phoneValid = /^[0-9]+$/.test(phoneInput.value.trim()) && phoneInput.value.trim().length > 0;
-        bookButton.disabled = !(nameValid && phoneValid);
+    const continueDate = $('continue-date');
+    if (continueDate) {
+      const dateReady = !!state.date && !!state.start && validStart(state.date, state.start);
+      continueDate.disabled = !dateReady;
+      continueDate.setAttribute('aria-disabled', String(continueDate.disabled));
     }
 
-    nameInput.addEventListener("input", validateForm);
-    phoneInput.addEventListener("input", validateForm);
+    const ds=$('date-service-summary');
+    if(ds) ds.innerHTML=`<strong>${state.selected.length} ${t('services','خدمات')}</strong><span>${totalMinutes()} ${t('min','دقيقة')} · ${money(total())}</span>`;
 
-    form.addEventListener("submit", function (e) {
-        e.preventDefault();
-        bookButton.disabled = true;
+    const selectedNames = selectedServices().map(s => esc(s['name-'+state.lang] || s['name-en'])).join(' · ');
+    const dateNames = $('date-selected-services');
+    if(dateNames) dateNames.innerHTML = selectedNames
+      ? `<span>${t('Selected services','الخدمات المختارة')}</span><strong>${selectedNames}</strong>`
+      : '';
 
-        // Use translated strings from data-i18n if available, fallback to English
-        const lang = document.documentElement.getAttribute("lang") || "en";
-        const getI18n = (key, fallback) => {
-            const el = document.querySelector(`[data-i18n="${key}"]`);
-            return (el && el.textContent.trim()) || fallback;
-        };
-        bookButton.textContent = getI18n("bookingReview.submitting", "Booking...");
+    const detailsNames = $('details-selected-services');
+    if(detailsNames) detailsNames.innerHTML = selectedNames
+      ? `<span>${t('Selected services','الخدمات المختارة')}</span><strong>${selectedNames}</strong>`
+      : '';
 
-        fetch(form.action, {
-            method: form.method,
-            body: new FormData(form),
-            headers: { 'Accept': 'application/json' }
-        }).then(response => {
-            if (response.ok) {
-                alert(getI18n("bookingReview.successMessage", "Thanks! We will contact you soon."));
-                form.reset();
-                localStorage.removeItem("selectedDates");
-                localStorage.removeItem("service");
-                localStorage.removeItem("serviceDisplay");
-                localStorage.removeItem("serviceCategory");
-                localStorage.removeItem("serviceCategoryDisplay");
-                localStorage.removeItem("selectedDate");
-                localStorage.removeItem("selectedTime");
-                localStorage.removeItem("voucher");
-            } else {
-                alert(getI18n("bookingReview.errorMessage", "Oops! Something went wrong."));
-            }
-            bookButton.textContent = getI18n("bookingReview.submitButton", "Book now");
-            bookButton.disabled = false;
-            window.location.href = "index.html";
-        });
+    const rs=$('review-services'), rt=$('review-timeline'), reviewTotal=$('review-total');
+    if(rs){
+      rs.innerHTML=selectedServices().map(s=>`<div class="review-service"><span>${esc(s['name-'+state.lang]||s['name-en'])}<small>${duration(s)} ${t('min','دقيقة')}</small></span><strong>${money(price(s))}</strong></div>`).join('');
+    }
+    if(reviewTotal) reviewTotal.textContent=money(total());
+
+    if(rt){
+      if(state.date && state.start){
+        let cur=toMin(state.start);
+        rt.innerHTML=selectedServices().map(s=>{
+          const st=minutesToTime(cur),en=minutesToTime(cur+duration(s));
+          cur+=duration(s);
+          return `<div class="timeline-item"><span class="timeline-time">${formatTime(st)}<br><small>${formatTime(en)}</small></span><span class="timeline-dot"></span><span class="timeline-service"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${duration(s)} ${t('min','دقيقة')}</small></span></div>`;
+        }).join('');
+      } else {
+        rt.innerHTML=`<div class="booking-empty">${t('Select a date and time to see your appointment.','اختاري التاريخ والوقت لرؤية تفاصيل موعدك.')}</div>`;
+      }
+    }
+
+    const final=$('final-summary');
+    if(final){
+      if(state.date && state.start){
+        final.innerHTML=`<div><span>${formatDate(state.date)}</span><strong>${formatTime(state.start)} – ${formatTime(minutesToTime(toMin(state.start)+totalMinutes()))}</strong></div><div class="final-services-row"><span>${t('Services','الخدمات')}</span><strong>${selectedNames || state.selected.length}</strong></div><div class="final-total"><span>${t('Total','الإجمالي')}</span><strong>${money(total())}</strong></div>`;
+      } else {
+        final.innerHTML=`<div><span>${t('Appointment','الموعد')}</span><strong>${t('Choose a date and time','اختاري التاريخ والوقت')}</strong></div><div><span>${t('Services','الخدمات')}</span><strong>${state.selected.length}</strong></div><div class="final-total"><span>${t('Total','الإجمالي')}</span><strong>${money(total())}</strong></div>`;
+      }
+    }
+
+    const success=$('success-summary');
+    if(success && state.date && state.start){
+      success.innerHTML=`<p><strong>${formatDate(state.date)}</strong></p><p>${formatTime(state.start)} – ${formatTime(minutesToTime(toMin(state.start)+totalMinutes()))}</p><p>${selectedServices().map(s=>esc(s['name-'+state.lang]||s['name-en'])).join(' · ')}</p><strong>${money(total())}</strong>`;
+    }
+  }
+
+  function showStep(n){
+    state.step=n;
+    document.querySelectorAll('.booking-step').forEach(s=>s.classList.toggle('is-active',Number(s.dataset.step)===n));
+
+    // Refresh navigation state whenever the user changes steps.
+    const continueServices = $('continue-services');
+    if (continueServices) {
+      continueServices.disabled = state.selected.length === 0;
+    }
+    const continueDate = $('continue-date');
+    if (continueDate) {
+      continueDate.disabled = !(state.date && state.start && validStart(state.date, state.start));
+    }
+    document.querySelectorAll('.booking-progress span').forEach((s,i)=>{
+      s.classList.toggle('is-active',i<n);
+      s.classList.toggle('is-done',i<n-1);
     });
 
-    validateForm();
-}
+    document.querySelectorAll('.booking-flow-step').forEach((el)=>{
+      const stepNo = Number(el.getAttribute('data-flow-step'));
+      el.classList.toggle('is-current', stepNo === Math.min(n,4));
+      el.classList.toggle('is-done', stepNo < n && n < 5);
+    });
+    document.querySelectorAll('.booking-flow-indicator > i').forEach((el,i)=>{
+      el.classList.toggle('is-done', i < Math.max(0, Math.min(n,4)-1));
+    });
 
-// ─── DOMContentLoaded ─────────────────────────────────────────────────────────
+    const label=$('booking-step-label');
+    if(label) label.textContent=n<5?t(`Step ${n} of 4`,`الخطوة ${n} من 4`):t('Complete','تم');
+    if(n===2){ renderCalendar(); renderTimeSlots(); }
+    if(n===3 || n===4) renderSummaries();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
 
-document.addEventListener("DOMContentLoaded", function () {
-    const path = window.location.pathname;
+  function setClick(id, handler){
+    const el=$(id);
+    if(el) el.onclick=handler;
+  }
 
-    if (path.endsWith("index.html") || path === "/") {
-        localStorage.removeItem("selectedDates");
-        localStorage.removeItem("service");
-        localStorage.removeItem("serviceDisplay");
-        localStorage.removeItem("serviceCategory");
-        localStorage.removeItem("serviceCategoryDisplay");
-        localStorage.removeItem("selectedDate");
-        localStorage.removeItem("selectedTime");
-        localStorage.removeItem("voucher");
-        if (window.location.search) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
+  function bindEvents(){
+    setClick('continue-services',()=>{ if(state.selected.length) showStep(2); });
+    setClick('back-to-services',()=>showStep(1));
+    setClick('continue-date',()=>{ if(state.date&&state.start) showStep(3); });
+    setClick('back-to-date',()=>showStep(2));
+    setClick('continue-review',()=>showStep(4));
+    setClick('edit-date',()=>showStep(2));
+    setClick('edit-services',()=>showStep(1));
+    setClick('prev-month',()=>changeMonth(-1));
+    setClick('next-month',()=>changeMonth(1));
+    const form=$('booking-form');
+    if(form) form.onsubmit=submitBooking;
+  }
+
+  function changeMonth(delta){
+    if(!state.config) return;
+    const current=getViewDate();
+    const ref=new Date(current.getFullYear(),current.getMonth()+delta,1);
+    const today=new Date(); today.setHours(0,0,0,0);
+    const minMonth=new Date(today.getFullYear(),today.getMonth(),1);
+    const maxMonths=Math.max(0,Number(state.config.advanceMonths||3)-1);
+    const maxMonth=new Date(minMonth.getFullYear(),minMonth.getMonth()+maxMonths,1);
+
+    if(ref<minMonth || ref>maxMonth) return;
+    setViewMonth(ref.getFullYear(),ref.getMonth());
+    renderCalendarView(ref);
+  }
+
+  function renderCalendarView(ref){
+    const wrap=$('booking-calendar'); if(!wrap || !state.config)return;
+    const today=new Date();today.setHours(0,0,0,0);
+    const y=ref.getFullYear(),m=ref.getMonth();
+    setViewMonth(y,m);
+    const days=state.config.days[state.lang]||state.config.days.en;
+    const months=state.config.months[state.lang]||state.config.months.en;
+    const monthEl=$('calendar-month');
+    if(monthEl) monthEl.textContent=`${months[m]} ${y}`;
+    wrap.innerHTML='';
+    days.forEach(d=>{const h=document.createElement('div');h.className='calendar-weekday';h.textContent=d;wrap.appendChild(h);});
+    for(let i=0;i<new Date(y,m,1).getDay();i++){const e=document.createElement('div');e.className='calendar-empty';wrap.appendChild(e);}
+    const last=new Date(y,m+1,0).getDate();
+    for(let day=1;day<=last;day++){
+      const d=new Date(y,m,day),iso=isoDate(d),b=document.createElement('button');
+      b.type='button';b.className='calendar-day';
+      if(d<today || !hasAnyAvailability(iso))b.disabled=true;
+      if(iso===state.date)b.classList.add('is-selected');
+      if(iso===isoDate(today))b.classList.add('is-today');
+      b.innerHTML=`<span>${day}</span>${iso===isoDate(today)?'<small>'+t('Today','اليوم')+'</small>':''}`;
+      b.onclick=()=>{
+        state.date=iso;
+        state.start=null;
+        setViewMonth(d.getFullYear(),d.getMonth());
+        saveDraft();
+        renderCalendarView(d);
+        renderTimeSlots();
+        renderSummaries();
+      };
+      wrap.appendChild(b);
     }
 
-    if (path.endsWith("booking-date-time.html") || path.endsWith("booking-date-time")) {
-        // Guard: service must have been set by chooseService() in services.html.
-        // Covers both the URL param and localStorage — either is enough.
-        const service = getParams().get("service") || localStorage.getItem("service");
+    const prev=$('prev-month'),next=$('next-month');
+    if(prev){
+      const minMonth=new Date(today.getFullYear(),today.getMonth(),1);
+      prev.disabled=ref<=minMonth;
+    }
+    if(next){
+      const maxMonths=Math.max(0,Number(state.config.advanceMonths||3)-1);
+      const maxMonth=new Date(today.getFullYear(),today.getMonth()+maxMonths,1);
+      next.disabled=ref>=maxMonth;
+    }
+  }
 
-        if (!service) {
-            localStorage.removeItem("selectedDates");
-            // window.location.replace("services.html");
-            return;
+  // Keep the new booking flow/local test booking AND the previous Formspree
+  // notification. The booking is stored first so an email provider problem
+  // never loses the customer's appointment request.
+  const BOOKING_FORMSPREE_ENDPOINT = 'https://formspree.io/f/xnjkdndz';
+
+  function submitBookingToFormspreeFallback({id,name,phone,email,notes,items}){
+    const form = document.getElementById('booking-form');
+    if(!form) throw new Error('Booking form not found');
+
+    const serviceNames = selectedServices()
+      .map(s => s['name-'+state.lang] || s['name-en'])
+      .join(', ');
+    const start = state.start;
+    const end = minutesToTime(toMin(start) + totalMinutes());
+
+    // Native form submission is deliberately used as a fallback.
+    // Unlike fetch(), it is not affected by browser CORS handling.
+    const fields = {
+      '_subject': `New salon booking ${id}`,
+      'booking_reference': id,
+      'name': name,
+      'phone': phone,
+      'email': email || '',
+      '_replyto': email || '',
+      'notes': notes || '',
+      'appointment_date': state.date,
+      'appointment_time': `${formatTime(start)} - ${formatTime(end)}`,
+      'services': serviceNames,
+      'total': `${total()} ${state.currency}`,
+      'duration': `${totalMinutes()} minutes`,
+      'status': 'Booking request received'
+    };
+
+    Object.keys(fields).forEach(function(key){
+      let input = form.querySelector(`input[data-formspree-field="${CSS.escape(key)}"]`);
+      if(!input){
+        input = document.createElement('input');
+        input.type = 'hidden';
+        input.setAttribute('data-formspree-field', key);
+        input.name = key;
+        form.appendChild(input);
+      }
+      input.value = fields[key];
+    });
+
+    form.action = BOOKING_FORMSPREE_ENDPOINT;
+    form.method = 'POST';
+    form.target = 'booking-formspree-frame';
+    form.dataset.formspreeFallback = 'true';
+
+    // Do not trigger the form's onsubmit handler again.
+    HTMLFormElement.prototype.submit.call(form);
+    return true;
+  }
+
+  async function sendBookingNotification({id,name,phone,email,notes,items}){
+    const serviceNames = selectedServices()
+      .map(s => s['name-'+state.lang] || s['name-en'])
+      .join(', ');
+    const start = state.start;
+    const end = minutesToTime(toMin(start) + totalMinutes());
+
+    const payload = new URLSearchParams();
+    payload.set('_subject', `New salon booking ${id}`);
+    payload.set('booking_reference', id);
+    payload.set('name', name);
+    payload.set('phone', phone);
+    if(email) {
+      payload.set('email', email);
+      payload.set('_replyto', email);
+    }
+    if(notes) payload.set('notes', notes);
+    payload.set('appointment_date', state.date);
+    payload.set('appointment_time', `${formatTime(start)} - ${formatTime(end)}`);
+    payload.set('services', serviceNames);
+    payload.set('total', `${total()} ${state.currency}`);
+    payload.set('duration', `${totalMinutes()} minutes`);
+    payload.set('status', 'Booking request received');
+
+    try {
+      const response = await fetch(BOOKING_FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+        },
+        body: payload.toString()
+      });
+
+      if(!response.ok){
+        let detail = '';
+        try {
+          const data = await response.json();
+          detail = data && data.errors
+            ? data.errors.map(x => x.message).join(', ')
+            : (data && data.error) || '';
+        } catch(e) {}
+
+        const error = new Error(detail || `Formspree returned ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+
+      return true;
+    } catch(error) {
+      // If fetch itself is blocked (commonly a CORS/network issue), use the
+      // same native POST mechanism as the original Formspree implementation.
+      // Do NOT do this for a real Formspree response such as 429, because that
+      // would simply submit the same rate-limited request again.
+      if(!error.status){
+        console.warn('Formspree AJAX request failed; using native form fallback.', error);
+        try {
+          return submitBookingToFormspreeFallback({id,name,phone,email,notes,items});
+        } catch(fallbackError) {
+          fallbackError.status = error.status || 0;
+          throw fallbackError;
         }
+      }
+      throw error;
+    }
+  }
 
-        // Keep localStorage in sync with URL param (in case only param is present)
-        localStorage.setItem("service", service);
+  async function submitBooking(e){
+    e.preventDefault();
+    const name=$('customer-name').value.trim(),phone=$('customer-phone').value.trim(),email=$('customer-email').value.trim(),notes=$('customer-notes').value.trim(),err=$('booking-error');
+    const submitButton = e.submitter || document.querySelector('.booking-submit');
+    err.textContent='';
+    if(!name||!phone){err.textContent=t('Please enter your name and WhatsApp/mobile number.','يرجى إدخال الاسم ورقم الواتساب/الهاتف.');return;}
+    if(!state.date||!state.start){err.textContent=t('Please select a date and time.','يرجى اختيار التاريخ والوقت.');return;}
+    if(!validStart(state.date,state.start)){err.textContent=t('That time is no longer available. Please choose another time.','هذا الوقت لم يعد متاحاً. يرجى اختيار وقت آخر.');showStep(2);return;}
+
+    const id='SAL-'+Date.now().toString().slice(-6);
+    let cur=toMin(state.start);
+    const items=selectedServices().map(s=>{
+      const st=minutesToTime(cur),en=minutesToTime(cur+duration(s));
+      cur+=duration(s);
+      return {serviceSku:s.sku,start:st,end:en};
+    });
+
+    // Save locally first. This is the current test source of truth and also
+    // makes the selected time unavailable immediately on this browser.
+    const local=getLocalBookings();
+    local.push({
+      id,
+      date:state.date,
+      status:'confirmed',
+      items,
+      customer:{name,phone,email,notes},
+      total:total(),
+      currency:state.currency
+    });
+    localStorage.setItem('salonTestBookings',JSON.stringify(local));
+
+    if(submitButton){
+      submitButton.disabled=true;
+      submitButton.dataset.originalText=submitButton.textContent;
+      submitButton.textContent=t('Sending request…','جارٍ إرسال الطلب…');
     }
 
-    if (path.endsWith("booking-review.html") || path.endsWith("checkout")) {
-        // Guard: must have a service and at least one valid selection.
-        // A user typing the URL directly will have neither, so redirect them.
-        const service = getParams().get("service") || localStorage.getItem("service");
-        const selections = getSelections();
-        const valid = service && selections.length > 0 && selections.every(s => s.isoKey && s.time && s.displayHTML_en);
-
-        if (!valid) {
-            // Clear any partial state and send them back to the start
-            localStorage.removeItem("service");
-            localStorage.removeItem("selectedDates");
-            window.location.replace("services.html");
-            return;
-        }
-
-        populateBookingForm();
-        setupBookingValidation();
-        // setupWhatsAppButton();
+    let emailSent=false;
+    let emailError=null;
+    try {
+      await sendBookingNotification({id,name,phone,email,notes,items});
+      emailSent=true;
+    } catch(e) {
+      emailError=e;
+      console.warn('Booking email notification failed:',e);
     }
-});
+
+    $('success-reference').textContent=id;
+    renderSummaries();
+
+    const success = $('success-summary');
+    if(success){
+      const notification = emailSent
+        ? t('Booking notification sent to the salon.','تم إرسال إشعار الحجز إلى الصالون.')
+        : (emailError && emailError.status === 429
+          ? t('Your booking was saved, but the email service is temporarily rate-limited. The salon can still see this test booking on this browser.','تم حفظ الحجز، لكن خدمة البريد وصلت مؤقتاً إلى حد الإرسال. يمكن للصالون رؤية الحجز التجريبي على هذا المتصفح.')
+          : t('Your booking was saved. The email notification could not be sent right now.','تم حفظ الحجز، لكن تعذر إرسال إشعار البريد الإلكتروني حالياً.'));
+      success.innerHTML += `<p class="booking-notification-status ${emailSent?'is-sent':'is-warning'}">${esc(notification)}</p>`;
+    }
+
+    localStorage.removeItem('salonBookingDraft');
+    if(submitButton){
+      submitButton.disabled=false;
+      submitButton.textContent=submitButton.dataset.originalText || t('Request appointment','إرسال طلب الحجز');
+    }
+    showStep(5);
+  }
+
+  function applyTranslations(){
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+      const key=el.getAttribute('data-i18n'), val=translations[state.lang]&&translations[state.lang][key];
+      if(val)el.textContent=val;
+    });
+  }
+
+  const translations={
+    en:{
+      'booking.back':'← Back to services','booking.eyebrow':'YOUR APPOINTMENT','booking.servicesTitle':'What would you like to book?','booking.servicesDescription':'Choose one or more services. We’ll build the appointment time for you.','booking.continue':'Continue','booking.dateTitle':'When would you like to come?','booking.dateDescription':'Pick a date, then choose a start time that fits all your selected services.','booking.availableTimes':'Available times','booking.reviewTitle':'Review your appointment','booking.reviewDescription':'Everything looks good? You can go back and change anything before confirming.','booking.schedule':'Your schedule','booking.services':'Services','booking.edit':'Edit','booking.total':'Total','booking.payAtSalon':'Pay at the salon','booking.payDescription':'No online payment is required. We’ll contact you to confirm your appointment.','booking.detailsTitle':'How can we contact you?','booking.detailsDescription':'We only need a few details to confirm your appointment.','booking.name':'Full name','booking.phone':'WhatsApp / mobile','booking.email':'Email','booking.optional':'(optional)','booking.notes':'Notes','booking.confirm':'Request appointment','booking.doneEyebrow':'ALL SET','booking.doneTitle':'Booking request received','booking.doneDescription':'Thank you. We’ll contact you to confirm your appointment.','booking.reference':'Booking reference','booking.doneButton':'Back to home'
+    },
+    ar:{
+      'booking.back':'← العودة إلى الخدمات','booking.eyebrow':'موعدك','booking.servicesTitle':'ماذا تريدين حجزه؟','booking.servicesDescription':'اختاري خدمة أو أكثر وسنرتب لكِ وقت الموعد تلقائياً.','booking.continue':'متابعة','booking.dateTitle':'متى ترغبين بالحضور؟','booking.dateDescription':'اختاري التاريخ ثم الوقت المناسب لجميع الخدمات التي اخترتها.','booking.availableTimes':'الأوقات المتاحة','booking.reviewTitle':'راجعي موعدك','booking.reviewDescription':'تأكدي من التفاصيل ويمكنك العودة لتعديل أي شيء قبل التأكيد.','booking.schedule':'جدول موعدك','booking.services':'الخدمات','booking.edit':'تعديل','booking.total':'الإجمالي','booking.payAtSalon':'الدفع في الصالون','booking.payDescription':'لا يلزم الدفع الإلكتروني. سنتواصل معك لتأكيد الموعد.','booking.detailsTitle':'كيف يمكننا التواصل معك؟','booking.detailsDescription':'نحتاج إلى بعض البيانات فقط لتأكيد موعدك.','booking.name':'الاسم الكامل','booking.phone':'الواتساب / الهاتف','booking.email':'البريد الإلكتروني','booking.optional':'(اختياري)','booking.notes':'ملاحظات','booking.confirm':'إرسال طلب الحجز','booking.doneEyebrow':'تم','booking.doneTitle':'تم استلام طلب الحجز','booking.doneDescription':'شكراً لكِ. سنتواصل معك لتأكيد الموعد.','booking.reference':'رقم الحجز','booking.doneButton':'العودة للرئيسية'
+    }
+  };
+
+  function isoDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+  function minutesToTime(n){return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;}
+  function formatTime(v){const [h,m]=v.split(':').map(Number);const ap=h>=12?'PM':'AM';const hh=h%12||12;return `${hh}:${String(m).padStart(2,'0')} ${ap}`;}
+  function formatDate(iso){if(!iso)return '';const d=new Date(iso+'T12:00:00');const months=state.config.months[state.lang]||state.config.months.en;return state.lang==='ar'?`${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`:`${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+  // Backward compatibility: services page can still call chooseService().
+  window.chooseService=function(serviceName,displayName,categoryName,categoryDisplayName){
+    const found=state.services.find(s=>s['name-en']===serviceName||s['name-ar']===displayName);
+    if(found){state.selected=[found.sku];state.date=null;state.start=null;saveDraft();}
+    else { localStorage.setItem('service', serviceName); localStorage.removeItem('selectedDates'); }
+    window.location.href='booking.html';
+  };
+
+  document.addEventListener('langChanged',function(e){
+    state.lang=e.detail.lang;
+    if(!state.initialized) return;
+    render();
+    showStep(state.step);
+  });
+  document.addEventListener('DOMContentLoaded',init);
+})();

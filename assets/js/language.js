@@ -206,7 +206,7 @@
         return '<div class="cell-xs-6">'
           + '<article class="box-icon">'
           + imgHtml
-          + '<p class="box-icon-header"><a class="link-underlined" href="services.html">' + title + '</a></p>'
+          + '<p class="box-icon-header"><a class="link-underlined" href="booking.html">' + title + '</a></p>'
           + '<p class="box-icon-text">' + description + '</p>'
           + '</article>'
           + '</div>';

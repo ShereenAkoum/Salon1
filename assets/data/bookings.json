@@ -1,0 +1,21 @@
+{
+  "bookings": [
+    {
+      "id": "TEST-001",
+      "date": "2026-08-12",
+      "status": "confirmed",
+      "items": [
+        {
+          "serviceSku": "HS-001",
+          "start": "10:00",
+          "end": "10:30"
+        },
+        {
+          "serviceSku": "HT-002",
+          "start": "10:30",
+          "end": "12:00"
+        }
+      ]
+    }
+  ]
+}

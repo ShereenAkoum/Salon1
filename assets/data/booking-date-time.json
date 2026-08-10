@@ -1,10 +1,4 @@
 {
-  "back-en": "Back",
-  "back-ar": "رجوع",
-  "title-en": "Choose a Date",
-  "title-ar": "اختر تاريخاً",
-  "description-en": "To complete your booking, please choose the date and time that fit you best. We will be glad to offer you top-notch barber services on the selected day.",
-  "description-ar": "لإتمام حجزك، يرجى اختيار التاريخ والوقت الأنسب لك. سيسعدنا تقديم أفضل خدمات الحلاقة في اليوم المحدد.",
   "months": {
     "en": [
       "January",
@@ -37,32 +31,57 @@
   },
   "days": {
     "en": [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday"
+      "Sun",
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat"
     ],
     "ar": [
-      "الأحد",
-      "الاثنين",
-      "الثلاثاء",
-      "الأربعاء",
-      "الخميس",
-      "الجمعة",
-      "السبت"
+      "أحد",
+      "اثنين",
+      "ثلاثاء",
+      "أربعاء",
+      "خميس",
+      "جمعة",
+      "سبت"
     ]
   },
   "timeSlots": [
-    "10:00 - 11:00",
-    "11:00 - 12:00",
-    "12:00 - 13:00",
-    "13:00 - 14:00",
-    "14:00 - 15:00",
-    "15:00 - 16:00",
-    "16:00 - 17:00",
-    "17:00 - 18:00"
-  ]
+    "09:00",
+    "09:30",
+    "10:00",
+    "10:30",
+    "11:00",
+    "11:30",
+    "12:00",
+    "12:30",
+    "13:00",
+    "13:30",
+    "14:00",
+    "14:30",
+    "15:00",
+    "15:30",
+    "16:00",
+    "16:30",
+    "17:00",
+    "17:30",
+    "18:00"
+  ],
+  "slotMinutes": 30,
+  "advanceMonths": 3,
+  "messages": {
+    "en": {
+      "closed": "Closed",
+      "booked": "Booked",
+      "available": "Available"
+    },
+    "ar": {
+      "closed": "مغلق",
+      "booked": "محجوز",
+      "available": "متاح"
+    }
+  }
 }
