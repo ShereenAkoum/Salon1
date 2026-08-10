@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { categories: [], services: [], users: [], editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { categories: [], services: [], users: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'calendar', calendarDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -56,6 +56,7 @@
     if (result.error) throw result.error;
     state.users=result.data||[]; renderUsers();
     $('stat-users') && ($('stat-users').textContent=state.users.length);
+    $('stat-bookings') && ($('stat-bookings').textContent=state.bookings.length);
   }
   function categoryName(id) { var c=state.categories.find(function(x){return String(x.id)===String(id);}); return c?c.name_en:'—'; }
 
@@ -93,6 +94,7 @@
     var active=state.services.filter(function(s){return s.active!==false;}).length;
     $('stat-services').textContent=active; $('stat-categories').textContent=state.categories.filter(function(c){return c.active!==false;}).length+' categories';
     $('stat-users') && ($('stat-users').textContent=state.users.length);
+    $('stat-bookings') && ($('stat-bookings').textContent=state.bookings.length);
   }
   function populateCategorySelect() {
     $('service-category').innerHTML=state.categories.map(function(c){return '<option value="'+c.id+'">'+escapeHtml(c.name_en)+'</option>';}).join('');
@@ -135,6 +137,286 @@
     if(result.error){message(result.error.message,'error');return;}message(state.editingCategoryId?'Category updated.':'Category added.','success');resetCategoryForm();await loadData();
   }
 
+
+  function bookingStore() {
+    try {
+      var raw = localStorage.getItem('salonTestBookings');
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+
+  async function loadBookings() {
+    var local = bookingStore();
+    if (!local.length) {
+      try {
+        var response = await fetch('assets/data/bookings.json', { cache: 'no-store' });
+        if (response.ok) {
+          var data = await response.json();
+          local = Array.isArray(data.bookings) ? data.bookings : [];
+        }
+      } catch (e) {}
+    }
+    try {
+      var vr = await fetch('assets/data/vouchers.json', { cache: 'no-store' });
+      if (vr.ok) {
+        var vd = await vr.json();
+        state.bookingVouchers = Array.isArray(vd) ? vd : [];
+      }
+    } catch (e) { state.bookingVouchers = []; }
+    state.bookings = local.slice().sort(function(a,b) {
+      return String(b.date || '').localeCompare(String(a.date || '')) ||
+        String(b.items && b.items[0] ? b.items[0].start : '').localeCompare(String(a.items && a.items[0] ? a.items[0].start : ''));
+    });
+    renderBookings();
+    updateBookingDashboardStat();
+  }
+
+  function bookingStatus(b) {
+    return String(b.status || 'pending').toLowerCase();
+  }
+
+  function bookingStart(b) {
+    return b.items && b.items[0] ? b.items[0].start : '';
+  }
+
+  function bookingEnd(b) {
+    if (!b.items || !b.items.length) return '';
+    return b.items[b.items.length - 1].end || '';
+  }
+
+  function bookingDateTime(b) {
+    var date = b.date || '';
+    var start = bookingStart(b);
+    return date ? new Date(date + 'T' + (start || '00:00') + ':00') : null;
+  }
+
+  function bookingCustomer(b) {
+    return b.customer || { name: b.name || 'Customer', phone: b.phone || '', email: b.email || '', notes: b.notes || '' };
+  }
+
+  function serviceForBookingItem(item) {
+    var found = state.services.find(function(s){ return String(s.sku || '') === String(item.serviceSku || ''); });
+    if (found) return { name: found.name_en || found.name || item.serviceSku, duration: found.duration_minutes, price: found.price_usd };
+    var voucher = state.bookingVouchers.find(function(v){ return String(v.sku || v.id || '') === String(item.serviceSku || ''); });
+    if (voucher) return { name: voucher.title || 'Voucher', duration: voucher.durationMinutes, price: voucher.price, voucher: true };
+    return { name: item.serviceSku || 'Service', duration: null, price: null };
+  }
+
+  function bookingServiceNames(b) {
+    return (b.items || []).map(function(item){ return serviceForBookingItem(item).name; });
+  }
+
+  function bookingMoney(b) {
+    if (b.total == null || b.total === '') return '—';
+    return escapeHtml(String(b.total)) + ' ' + escapeHtml(b.currency === 'QAR' ? 'QAR' : '$');
+  }
+
+  function statusLabel(status) {
+    var s = bookingStatus({status: status});
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function bookingMatches(b) {
+    var status = bookingStatus(b);
+    if (state.bookingFilter !== 'all' && status !== state.bookingFilter) return false;
+    var now = new Date(); now.setHours(0,0,0,0);
+    var d = b.date ? new Date(b.date + 'T12:00:00') : null;
+    if (state.bookingDateFilter === 'today' && (!d || d.toDateString() !== now.toDateString())) return false;
+    if (state.bookingDateFilter === 'upcoming' && (!d || d < now)) return false;
+    if (state.bookingDateFilter === 'past' && (!d || d >= now)) return false;
+    var q = state.bookingSearch.trim().toLowerCase();
+    if (q) {
+      var c = bookingCustomer(b);
+      var hay = [b.id, c.name, c.phone, c.email].concat(bookingServiceNames(b)).join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+
+  function calendarDateKey(date) {
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function calendarMonthLabel(date) {
+    return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+
+  function renderBookingsCalendar() {
+    var grid = $('bookings-calendar-grid');
+    if (!grid) return;
+
+    var month = new Date(state.calendarDate.getFullYear(), state.calendarDate.getMonth(), 1);
+    var firstDay = month.getDay();
+    var daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+    var prevDays = new Date(month.getFullYear(), month.getMonth(), 0).getDate();
+    var cells = 42;
+    var visible = state.bookings.filter(bookingMatches);
+    var grouped = {};
+
+    visible.forEach(function(b) {
+      if (!b.date) return;
+      var key = String(b.date).slice(0, 10);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(b);
+    });
+
+    Object.keys(grouped).forEach(function(key) {
+      grouped[key].sort(function(a,b) {
+        return String(bookingStart(a)).localeCompare(String(bookingStart(b)));
+      });
+    });
+
+    $('calendar-month-title').textContent = calendarMonthLabel(month);
+    $('calendar-booking-count').textContent = visible.length + (visible.length === 1 ? ' booking' : ' bookings');
+
+    var html = '';
+    for (var i = 0; i < cells; i++) {
+      var dayNumber = i - firstDay + 1;
+      var dateObj;
+      var outside = false;
+      if (dayNumber < 1) {
+        dateObj = new Date(month.getFullYear(), month.getMonth() - 1, prevDays + dayNumber);
+        outside = true;
+      } else if (dayNumber > daysInMonth) {
+        dateObj = new Date(month.getFullYear(), month.getMonth() + 1, dayNumber - daysInMonth);
+        outside = true;
+      } else {
+        dateObj = new Date(month.getFullYear(), month.getMonth(), dayNumber);
+      }
+
+      var key = calendarDateKey(dateObj);
+      var todayKey = calendarDateKey(new Date());
+      var classes = 'crm-calendar-day' + (outside ? ' is-outside' : '') + (key === todayKey ? ' is-today' : '');
+      var events = grouped[key] || [];
+      var eventsHtml = events.slice(0, 4).map(function(b) {
+        var status = bookingStatus(b);
+        var c = bookingCustomer(b);
+        var names = bookingServiceNames(b);
+        var time = bookingStart(b) || '';
+        return '<button type="button" class="crm-calendar-event crm-calendar-event-' + escapeHtml(status) + '" data-calendar-booking="' + escapeHtml(b.id || '') + '">' +
+          '<span class="crm-calendar-event-time">' + escapeHtml(time) + '</span>' +
+          '<span class="crm-calendar-event-name">' + escapeHtml(c.name || 'Customer') + '</span>' +
+          '<span class="crm-calendar-event-service">' + escapeHtml(names.join(', ') || 'Service') + '</span>' +
+        '</button>';
+      }).join('');
+
+      if (events.length > 4) {
+        eventsHtml += '<button type="button" class="crm-calendar-more" data-calendar-day="' + escapeHtml(key) + '">' + (events.length - 4) + ' more</button>';
+      }
+
+      html += '<div class="' + classes + '">' +
+        '<div class="crm-calendar-day-head"><span class="crm-calendar-day-number">' + dateObj.getDate() + '</span>' + (events.length ? '<span class="crm-calendar-day-count">' + events.length + '</span>' : '') + '</div>' +
+        '<div class="crm-calendar-events">' + eventsHtml + '</div>' +
+      '</div>';
+    }
+
+    grid.innerHTML = html;
+  }
+
+  function setBookingView(view) {
+    state.bookingView = view === 'list' ? 'list' : 'calendar';
+    var list = $('bookings-list-view'), calendar = $('bookings-calendar-view');
+    if (list) list.classList.toggle('crm-hidden', state.bookingView !== 'list');
+    if (calendar) calendar.classList.toggle('crm-hidden', state.bookingView !== 'calendar');
+    document.querySelectorAll('[data-booking-view]').forEach(function(btn) {
+      btn.classList.toggle('is-active', btn.getAttribute('data-booking-view') === state.bookingView);
+    });
+    if (state.bookingView === 'calendar') renderBookingsCalendar();
+  }
+
+  function renderBookings() {
+    var body = $('bookings-table-body');
+    if (!body) return;
+    var visible = state.bookings.filter(bookingMatches);
+    body.innerHTML = visible.map(function(b) {
+      var c = bookingCustomer(b);
+      var names = bookingServiceNames(b);
+      var first = bookingStart(b), last = bookingEnd(b);
+      var dateText = b.date ? new Date(b.date + 'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '—';
+      var timeText = first ? first + (last ? ' – ' + last : '') : '—';
+      var status = bookingStatus(b);
+      var badgeClass = status === 'confirmed' ? 'active' : (status === 'cancelled' ? 'inactive' : 'crm-booking-status-' + status);
+      return '<tr class="crm-booking-row" data-booking-id="' + escapeHtml(b.id || '') + '">' +
+        '<td><strong>' + escapeHtml(dateText) + '</strong><br><span class="crm-small">' + escapeHtml(timeText) + '</span></td>' +
+        '<td><strong>' + escapeHtml(c.name || 'Customer') + '</strong><br><span class="crm-small">' + escapeHtml(b.id || 'No reference') + '</span></td>' +
+        '<td><strong>' + escapeHtml(names.join(', ') || '—') + '</strong><br><span class="crm-small">' + (b.items ? b.items.length : 0) + ' service' + ((b.items && b.items.length === 1) ? '' : 's') + '</span></td>' +
+        '<td>' + escapeHtml(c.phone || '—') + '<br><span class="crm-small">' + escapeHtml(c.email || 'No email') + '</span></td>' +
+        '<td class="crm-price">' + bookingMoney(b) + '</td>' +
+        '<td><span class="crm-badge ' + badgeClass + '">' + escapeHtml(statusLabel(status)) + '</span></td>' +
+        '<td><button type="button" class="crm-btn crm-btn-secondary crm-btn-small" data-view-booking="' + escapeHtml(b.id || '') + '">View</button></td>' +
+      '</tr>';
+    }).join('');
+    $('bookings-empty').classList.toggle('crm-hidden', visible.length !== 0);
+    updateBookingCounts();
+    if (state.bookingView === 'calendar') renderBookingsCalendar();
+  }
+
+  function updateBookingCounts() {
+    var counts = {all:state.bookings.length,pending:0,confirmed:0,completed:0,cancelled:0};
+    state.bookings.forEach(function(b){ var s=bookingStatus(b); if (counts[s] != null) counts[s]++; });
+    Object.keys(counts).forEach(function(k){ var el=$('booking-count-'+k); if(el) el.textContent=counts[k]; });
+    document.querySelectorAll('[data-booking-filter]').forEach(function(b){ b.classList.toggle('is-active', b.getAttribute('data-booking-filter') === state.bookingFilter); });
+  }
+
+  function updateBookingDashboardStat() {
+    var el = $('stat-bookings');
+    if (el) el.textContent = state.bookings.length;
+  }
+
+  function persistBookings() {
+    localStorage.setItem('salonTestBookings', JSON.stringify(state.bookings));
+  }
+
+  function findBooking(id) {
+    return state.bookings.find(function(b){ return String(b.id) === String(id); });
+  }
+
+  function renderBookingDetail(id) {
+    var b = findBooking(id); if (!b) return;
+    var c = bookingCustomer(b), status = bookingStatus(b);
+    var dateText = b.date ? new Date(b.date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : '—';
+    var items = (b.items || []).map(function(item) {
+      var s = serviceForBookingItem(item);
+      return '<div class="crm-detail-item"><div><strong>' + escapeHtml(s.name) + '</strong><span>' + escapeHtml(item.start || '') + (item.end ? ' – ' + escapeHtml(item.end) : '') + '</span></div><strong>' + (s.price == null ? '—' : escapeHtml(String(s.price)) + ' ' + (b.currency === 'QAR' ? 'QAR' : '$')) + '</strong></div>';
+    }).join('');
+    var nextStatuses = ['pending','confirmed','completed','cancelled'].filter(function(s){return s!==status;}).map(function(s){
+      return '<button type="button" class="crm-btn ' + (s==='cancelled'?'crm-btn-danger':'crm-btn-secondary') + '" data-booking-status="' + s + '" data-booking-id="' + escapeHtml(b.id) + '">' + statusLabel(s) + '</button>';
+    }).join('');
+    $('booking-detail-content').innerHTML =
+      '<div class="crm-detail-status"><span class="crm-badge ' + (status==='confirmed'?'active':status==='cancelled'?'inactive':'crm-booking-status-'+status) + '">' + escapeHtml(statusLabel(status)) + '</span><span class="crm-small">' + escapeHtml(b.id || '') + '</span></div>' +
+      '<div class="crm-detail-grid">' +
+        '<div><span class="crm-detail-label">Customer</span><strong>' + escapeHtml(c.name || '—') + '</strong></div>' +
+        '<div><span class="crm-detail-label">Phone / WhatsApp</span><strong>' + escapeHtml(c.phone || '—') + '</strong></div>' +
+        '<div><span class="crm-detail-label">Email</span><strong>' + escapeHtml(c.email || '—') + '</strong></div>' +
+        '<div><span class="crm-detail-label">Appointment</span><strong>' + escapeHtml(dateText) + '</strong><span>' + escapeHtml(bookingStart(b) || '—') + (bookingEnd(b) ? ' – ' + escapeHtml(bookingEnd(b)) : '') + '</span></div>' +
+      '</div>' +
+      '<div class="crm-detail-section"><div class="crm-section-label">Services</div>' + items + '</div>' +
+      '<div class="crm-detail-total"><span>Total</span><strong>' + bookingMoney(b) + '</strong></div>' +
+      (c.notes ? '<div class="crm-detail-section"><div class="crm-section-label">Customer notes</div><p class="crm-detail-notes">' + escapeHtml(c.notes) + '</p></div>' : '') +
+      '<div class="crm-detail-actions">' + nextStatuses + '</div>';
+    $('booking-detail-modal').classList.remove('crm-hidden');
+    $('booking-detail-modal').setAttribute('aria-hidden','false');
+  }
+
+  function closeBookingDetail() {
+    $('booking-detail-modal').classList.add('crm-hidden');
+    $('booking-detail-modal').setAttribute('aria-hidden','true');
+  }
+
+  function updateBookingStatus(id, status) {
+    var b = findBooking(id); if (!b) return;
+    b.status = status;
+    persistBookings();
+    renderBookings();
+    updateBookingDashboardStat();
+    renderBookingDetail(id);
+    message('Booking ' + id + ' marked as ' + statusLabel(status) + '.', 'success');
+  }
+
   function showView(view){
     if(view==='users' && !isCrmAdmin()){
       message('Only administrators can manage CRM users.','error');
@@ -147,6 +429,7 @@
     var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],bookings:['Appointments','Bookings'],customers:['Customers','Customers']};
     var t=titles[view]||titles.dashboard;$('view-eyebrow').textContent=t[0];$('view-title').textContent=t[1];
     if(view==='users') loadUsers().catch(function(e){message(e.message,'error');});
+    if(view==='bookings') loadBookings().catch(function(e){message(e.message,'error');});
     if(view==='dashboard') updateDashboard();
     $('crm-sidebar').classList.remove('open');
   }
@@ -225,7 +508,7 @@
       history.replaceState({},document.title,window.location.pathname);
       $('crm-password-setup').classList.add('crm-hidden');
       if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();showLogin();message('Your invitation was accepted, but this account is not authorized for the salon CRM.','error');return;}
-      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();
+      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();await loadBookings();
       message('Password created. Welcome to the salon CRM.','success');
     } finally {
       if(button){button.disabled=false;button.textContent='Create password →';}
@@ -238,7 +521,7 @@
     var result=await window.salonSupabase.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
     if(result.error){message(result.error.message,'error');return;}
     if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();message('This account is not authorized to access the salon CRM.','error');return;}
-    showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();
+    showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();
   }
   function applyRoleVisibility(){
     document.querySelectorAll('[data-admin-only]').forEach(function(el){
@@ -258,6 +541,34 @@
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view'));});});
     document.querySelectorAll('[data-view-target]').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view-target'));});});
     $('mobile-menu').addEventListener('click',function(){$('crm-sidebar').classList.toggle('open');});
+    $('bookings-refresh').addEventListener('click',function(){loadBookings().catch(function(e){message(e.message,'error');});});
+    document.querySelectorAll('[data-booking-view]').forEach(function(b){b.addEventListener('click',function(){setBookingView(b.getAttribute('data-booking-view'));});});
+    $('calendar-prev').addEventListener('click',function(){state.calendarDate=new Date(state.calendarDate.getFullYear(),state.calendarDate.getMonth()-1,1);renderBookingsCalendar();});
+    $('calendar-next').addEventListener('click',function(){state.calendarDate=new Date(state.calendarDate.getFullYear(),state.calendarDate.getMonth()+1,1);renderBookingsCalendar();});
+    $('calendar-today').addEventListener('click',function(){state.calendarDate=new Date();renderBookingsCalendar();});
+    $('bookings-calendar-grid').addEventListener('click',function(e){
+      var booking=e.target.closest('[data-calendar-booking]');
+      if(booking){renderBookingDetail(booking.getAttribute('data-calendar-booking'));return;}
+      var more=e.target.closest('[data-calendar-day]');
+      if(more){
+        state.bookingDateFilter='all';
+        var key=more.getAttribute('data-calendar-day');
+        var d=new Date(key+'T12:00:00');
+        state.calendarDate=new Date(d.getFullYear(),d.getMonth(),1);
+        setBookingView('list');
+        renderBookings();
+        var title=$('bookings-message');
+        if(title){title.textContent='Showing the list for '+d.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})+'.';}
+      }
+    });
+    $('booking-search').addEventListener('input',function(e){state.bookingSearch=e.target.value;renderBookings();});
+    $('booking-date-filter').addEventListener('change',function(e){state.bookingDateFilter=e.target.value;renderBookings();});
+    document.querySelectorAll('[data-booking-filter]').forEach(function(b){b.addEventListener('click',function(){state.bookingFilter=b.getAttribute('data-booking-filter');renderBookings();});});
+    $('bookings-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-view-booking]');if(b)renderBookingDetail(b.getAttribute('data-view-booking'));});
+    document.querySelectorAll('[data-close-booking]').forEach(function(el){el.addEventListener('click',closeBookingDetail);});
+    $('booking-detail-content').addEventListener('click',function(e){var b=e.target.closest('[data-booking-status]');if(b)updateBookingStatus(b.getAttribute('data-booking-id'),b.getAttribute('data-booking-status'));});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')closeBookingDetail();});
+
     $('service-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-service]');if(b)editService(b.getAttribute('data-edit-service'));});
     $('category-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-category]');if(b)editCategory(b.getAttribute('data-edit-category'));}); $('users-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-user]');if(edit)editUser(edit.getAttribute('data-edit-user'));var toggle=e.target.closest('[data-toggle-user]');if(toggle)toggleUser(toggle.getAttribute('data-toggle-user'));});
     try{
@@ -267,7 +578,7 @@
         state.currentUserId=session.user.id;showPasswordSetup();
       } else if(await requireAdmin()){
         state.currentUserId=session&&session.user?session.user.id:null;
-        showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();
+        showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();
       } else showLogin();
     } catch(e){console.error(e);showLogin();}
   });

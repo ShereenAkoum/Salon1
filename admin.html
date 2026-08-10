@@ -54,7 +54,7 @@
           <button class="crm-nav-item" data-view="users"><span>♙</span> Users & Access</button>
         </nav>
         <div class="crm-side-bottom">
-          <a href="services.html" class="crm-nav-link">↗ View website</a>
+          <a href="index.html" class="crm-nav-link">↗ View website</a>
           <button id="logout" class="crm-nav-link crm-nav-logout">↪ Sign out</button>
         </div>
       </aside>
@@ -68,7 +68,7 @@
         <div id="app-message" class="crm-message"></div>
 
         <section id="view-dashboard" class="crm-view">
-          <div class="crm-welcome"><div><span class="crm-section-label">Good to see you</span><h2>Salon overview</h2><p>Manage your services today and get ready for bookings, vouchers and customers.</p></div><a href="services.html" class="crm-btn crm-btn-primary">View public website ↗</a></div>
+          <div class="crm-welcome"><div><span class="crm-section-label">Good to see you</span><h2>Salon overview</h2><p>Manage your services today and get ready for bookings, vouchers and customers.</p></div><a href="booking.html" class="crm-btn crm-btn-primary">Open booking ↗</a></div>
           <div class="crm-stats">
             <button class="crm-stat" data-view-target="services"><span class="crm-stat-icon">✂</span><span class="crm-stat-label">Active services</span><strong id="stat-services">—</strong><small id="stat-categories">— categories</small></button>
             <button class="crm-stat" data-view-target="vouchers"><span class="crm-stat-icon">◇</span><span class="crm-stat-label">Active vouchers</span><strong id="stat-vouchers">—</strong><small>Ready for customers</small></button>
@@ -139,7 +139,71 @@
         </section>
 
         <section id="view-vouchers" class="crm-view crm-hidden"><div class="crm-empty-state"><span>◇</span><div class="crm-section-label">Coming next</div><h2>Vouchers</h2><p>The dashboard is ready. We'll connect your voucher catalogue and customer offers next.</p></div></section>
-        <section id="view-bookings" class="crm-view crm-hidden"><div class="crm-empty-state"><span>◷</span><div class="crm-section-label">Coming next</div><h2>Bookings</h2><p>Appointment management will live here, including multiple services and time slots.</p></div></section>
+        <section id="view-bookings" class="crm-view crm-hidden">
+          <div class="crm-page-heading">
+            <div><div class="crm-section-label">Appointments</div><h2>Bookings</h2><p>Review customer requests, manage appointment status and see the full appointment details.</p></div>
+            <div class="crm-actions"><button id="bookings-refresh" class="crm-btn crm-btn-secondary" type="button">↻ Refresh</button></div>
+          </div>
+          <div class="crm-booking-stats">
+            <button class="crm-booking-stat is-active" data-booking-filter="all"><span>All</span><strong id="booking-count-all">0</strong></button>
+            <button class="crm-booking-stat" data-booking-filter="pending"><span>Pending</span><strong id="booking-count-pending">0</strong></button>
+            <button class="crm-booking-stat" data-booking-filter="confirmed"><span>Confirmed</span><strong id="booking-count-confirmed">0</strong></button>
+            <button class="crm-booking-stat" data-booking-filter="completed"><span>Completed</span><strong id="booking-count-completed">0</strong></button>
+            <button class="crm-booking-stat" data-booking-filter="cancelled"><span>Cancelled</span><strong id="booking-count-cancelled">0</strong></button>
+          </div>
+          <div class="crm-card crm-bookings-card">
+            <div class="crm-bookings-toolbar">
+              <div class="crm-search-box"><span>⌕</span><input id="booking-search" type="search" placeholder="Search customer, phone, email or booking reference"></div>
+              <select id="booking-date-filter" class="crm-booking-filter"><option value="all">All dates</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="past">Past</option></select>
+              <div class="crm-view-toggle" role="group" aria-label="Booking view">
+                <button type="button" class="crm-view-toggle-btn" data-booking-view="list">☷ <span>List</span></button>
+                <button type="button" class="crm-view-toggle-btn is-active" data-booking-view="calendar">▦ <span>Calendar</span></button>
+              </div>
+            </div>
+            <div id="bookings-message" class="crm-small crm-bookings-message"></div>
+
+            <div id="bookings-list-view" class="crm-booking-view crm-hidden">
+              <div class="crm-table-wrap">
+                <table class="crm-table crm-bookings-table">
+                  <thead><tr><th>Date & time</th><th>Customer</th><th>Service</th><th>Contact</th><th>Total</th><th>Status</th><th></th></tr></thead>
+                  <tbody id="bookings-table-body"></tbody>
+                </table>
+              </div>
+              <div id="bookings-empty" class="crm-bookings-empty crm-hidden"><div class="crm-bookings-empty-icon">◷</div><h3>No bookings found</h3><p>Try changing your filters or make a new booking.</p></div>
+            </div>
+
+            <div id="bookings-calendar-view" class="crm-booking-view">
+              <div class="crm-calendar-toolbar">
+                <div class="crm-calendar-heading">
+                  <button type="button" class="crm-calendar-nav" id="calendar-prev" aria-label="Previous month">‹</button>
+                  <div><strong id="calendar-month-title">August 2026</strong><span id="calendar-booking-count"></span></div>
+                  <button type="button" class="crm-calendar-nav" id="calendar-next" aria-label="Next month">›</button>
+                </div>
+                <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="calendar-today">Today</button>
+              </div>
+              <div class="crm-calendar-weekdays">
+                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+              </div>
+              <div id="bookings-calendar-grid" class="crm-calendar-grid"></div>
+              <div class="crm-calendar-legend">
+                <span><i class="crm-legend-dot pending"></i>Pending</span>
+                <span><i class="crm-legend-dot confirmed"></i>Confirmed</span>
+                <span><i class="crm-legend-dot completed"></i>Completed</span>
+                <span><i class="crm-legend-dot cancelled"></i>Cancelled</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div id="booking-detail-modal" class="crm-modal crm-hidden" aria-hidden="true">
+          <div class="crm-modal-backdrop" data-close-booking></div>
+          <aside class="crm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="booking-detail-title">
+            <button class="crm-modal-close" type="button" data-close-booking aria-label="Close">×</button>
+            <div class="crm-section-label">Appointment</div>
+            <h2 id="booking-detail-title">Booking</h2>
+            <div id="booking-detail-content"></div>
+          </aside>
+        </div>
+
         <section id="view-customers" class="crm-view crm-hidden"><div class="crm-empty-state"><span>♙</span><div class="crm-section-label">Coming next</div><h2>Customers</h2><p>Customer profiles and booking history will appear here.</p></div></section>
       </div>
     </div>
