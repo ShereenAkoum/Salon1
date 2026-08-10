@@ -147,8 +147,107 @@
   }
 
   async function loadBookings() {
+    /*
+     * Supabase is the source of truth for CRM bookings.
+     *
+     * IMPORTANT: the live bookings table does NOT use the old JSON fields
+     * (date/items/total/customer). It uses booking_date, customer_id,
+     * total_price and booking_services. The old query ordered by `date`,
+     * which made Supabase return an error and silently sent the CRM to the
+     * local JSON fallback. That is why confirmed test bookings were shown
+     * while the real pending booking was missing.
+     */
+    var dbBookings = null;
+    try {
+      var result = await window.salonSupabase
+        .from('bookings')
+        .select('id,public_reference,customer_id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_notes,created_at')
+        .order('id',{ascending:false});
+      if (result.error) throw result.error;
+
+      var rows = result.data || [];
+      var customerIds = rows.map(function(r){ return r.customer_id; }).filter(function(id){ return id != null; });
+      var customersById = {};
+      if (customerIds.length) {
+        var cr = await window.salonSupabase
+          .from('customers')
+          .select('id,name,phone,email,notes')
+          .in('id', Array.from(new Set(customerIds)));
+        if (cr.error) throw cr.error;
+        (cr.data || []).forEach(function(c){ customersById[String(c.id)] = c; });
+      }
+
+      var bookingIds = rows.map(function(r){ return r.id; }).filter(function(id){ return id != null; });
+      var bookingServices = [];
+      if (bookingIds.length) {
+        var br = await window.salonSupabase
+          .from('booking_services')
+          .select('id,booking_id,service_id,start_time,end_time,price,duration_minutes')
+          .in('booking_id', Array.from(new Set(bookingIds)));
+        if (br.error) throw br.error;
+        bookingServices = br.data || [];
+      }
+
+      var serviceIds = bookingServices.map(function(r){ return r.service_id; }).filter(function(id){ return id != null; });
+      var servicesById = {};
+      if (serviceIds.length) {
+        var sr = await window.salonSupabase
+          .from('services')
+          .select('id,sku,name_en,name_ar,price_usd,price_qar')
+          .in('id', Array.from(new Set(serviceIds)));
+        if (sr.error) throw sr.error;
+        (sr.data || []).forEach(function(svc){ servicesById[String(svc.id)] = svc; });
+      }
+
+      var itemsByBooking = {};
+      bookingServices.forEach(function(item){
+        var key=String(item.booking_id);
+        if(!itemsByBooking[key]) itemsByBooking[key]=[];
+        var svc=servicesById[String(item.service_id)] || {};
+        itemsByBooking[key].push({
+          serviceSku: svc.sku || '',
+          start: String(item.start_time || '').slice(0,5),
+          end: String(item.end_time || '').slice(0,5),
+          price: item.price,
+          duration_minutes: item.duration_minutes,
+          serviceName: svc.name_en || ''
+        });
+      });
+      Object.keys(itemsByBooking).forEach(function(key){
+        itemsByBooking[key].sort(function(a,b){ return a.start.localeCompare(b.start); });
+      });
+
+      dbBookings = rows.map(function(row){
+        var customer = customersById[String(row.customer_id)] || {};
+        return {
+          id: row.public_reference || String(row.id),
+          databaseId: row.id,
+          date: row.booking_date,
+          status: String(row.status || 'pending').toLowerCase(),
+          total: row.total_price,
+          currency: 'USD',
+          customer: {
+            name: customer.name || 'Customer',
+            phone: customer.phone || '',
+            email: customer.email || '',
+            notes: row.customer_notes || customer.notes || ''
+          },
+          items: itemsByBooking[String(row.id)] || [],
+          created_at: row.created_at
+        };
+      });
+    } catch (e) {
+      console.warn('Could not load Supabase bookings; using test fallback.', e);
+      dbBookings = null;
+    }
+
+    /*
+     * Only use local/JSON data when the Supabase request actually failed.
+     * If Supabase succeeds and contains zero bookings, the CRM must show zero
+     * bookings rather than resurrecting old confirmed test data.
+     */
     var local = bookingStore();
-    if (!local.length) {
+    if (dbBookings === null && !local.length) {
       try {
         var response = await fetch('assets/data/bookings.json', { cache: 'no-store' });
         if (response.ok) {
@@ -157,6 +256,7 @@
         }
       } catch (e) {}
     }
+
     try {
       var vr = await fetch('assets/data/vouchers.json', { cache: 'no-store' });
       if (vr.ok) {
@@ -164,9 +264,10 @@
         state.bookingVouchers = Array.isArray(vd) ? vd : [];
       }
     } catch (e) { state.bookingVouchers = []; }
-    state.bookings = local.slice().sort(function(a,b) {
-      return String(b.date || '').localeCompare(String(a.date || '')) ||
-        String(b.items && b.items[0] ? b.items[0].start : '').localeCompare(String(a.items && a.items[0] ? a.items[0].start : ''));
+
+    var source = dbBookings !== null ? dbBookings : local;
+    state.bookings = source.slice().sort(function(a,b) {
+      return Number(b.databaseId || 0) - Number(a.databaseId || 0);
     });
     renderBookings();
     updateBookingDashboardStat();
@@ -443,6 +544,14 @@
     localStorage.setItem('salonTestBookings', JSON.stringify(state.bookings));
   }
 
+  async function updateBookingStatusInDatabase(id,status){
+    var result=await window.salonSupabase.from('bookings').update({
+      status:status,
+      updated_at:new Date().toISOString()
+    }).eq('id',id);
+    if(result.error) throw result.error;
+  }
+
   function findBooking(id) {
     return state.bookings.find(function(b){ return String(b.id) === String(id); });
   }
@@ -479,7 +588,7 @@
     $('booking-detail-modal').setAttribute('aria-hidden','true');
   }
 
-  function updateBookingStatus(id, status) {
+  async function updateBookingStatus(id, status) {
     var b = findBooking(id); if (!b) return;
     status = String(status || 'pending').toLowerCase();
 
@@ -492,6 +601,13 @@
         renderBookingDetail(id);
         return;
       }
+    }
+
+    try {
+      await updateBookingStatusInDatabase(id,status);
+    } catch(e) {
+      message('Could not update the booking in Supabase: '+(e.message||'Unknown error'),'error');
+      return;
     }
 
     b.status = status;
@@ -593,7 +709,7 @@
       history.replaceState({},document.title,window.location.pathname);
       $('crm-password-setup').classList.add('crm-hidden');
       if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();showLogin();message('Your invitation was accepted, but this account is not authorized for the salon CRM.','error');return;}
-      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();await loadBookings();
+      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();
       message('Password created. Welcome to the salon CRM.','success');
     } finally {
       if(button){button.disabled=false;button.textContent='Create password →';}

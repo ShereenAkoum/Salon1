@@ -43,15 +43,72 @@
     return r.json();
   }
 
+
+  async function loadDatabaseBookingSlots(){
+    if(!window.salonSupabase || !window.salonSupabase.rpc) return null;
+    const from = new Date();
+    from.setHours(0,0,0,0);
+    const to = new Date(from);
+    to.setDate(to.getDate()+370);
+    const result = await window.salonSupabase.rpc('get_booked_slots',{
+      p_from: isoDate(from),
+      p_to: isoDate(to)
+    });
+    if(result.error) throw result.error;
+
+    const grouped={};
+    (result.data||[]).forEach(row=>{
+      const id=String(row.booking_id);
+      if(!grouped[id]) grouped[id]={
+        id,
+        date:row.booking_date,
+        status:row.status,
+        items:[]
+      };
+      grouped[id].items.push({
+        serviceSku:row.service_sku || '',
+        start:String(row.start_time).slice(0,5),
+        end:String(row.end_time).slice(0,5)
+      });
+    });
+    return Object.values(grouped);
+  }
+
+  async function createDatabaseBooking({id,date,status,customer,items,total,currency}){
+    if(!window.salonSupabase || !window.salonSupabase.rpc){
+      throw new Error('Supabase booking service is not available.');
+    }
+    const result=await window.salonSupabase.rpc('create_public_booking',{
+      p_id:id,
+      p_booking_date:date,
+      p_status:status,
+      p_customer_name:customer.name,
+      p_customer_phone:customer.phone,
+      p_customer_email:customer.email || null,
+      p_customer_notes:customer.notes || null,
+      p_items:items,
+      p_total:Number(total||0),
+      p_currency:currency
+    });
+    if(result.error) throw result.error;
+    return result.data;
+  }
+
   async function init(){
     try{
-      const [services, config, bookings, schedule, vouchers] = await Promise.all([
+      const [services, config, schedule, vouchers] = await Promise.all([
         loadJSON('assets/data/services.json'),
         loadJSON('assets/data/booking-date-time.json'),
-        loadJSON('assets/data/bookings.json').catch(()=>({bookings:[]})),
         loadJSON('assets/data/salon-schedule.json').catch(()=>({monthlySchedule:{}})),
         loadJSON('assets/data/vouchers.json').catch(()=>[])
       ]);
+      let databaseBookings = null;
+      try {
+        databaseBookings = await loadDatabaseBookingSlots();
+      } catch(dbError) {
+        console.warn('Could not load Supabase booking slots; using JSON/local fallback.', dbError);
+      }
+      const fallbackBookings = await loadJSON('assets/data/bookings.json').catch(()=>({bookings:[]}));
       state.config=config;
       state.currency=services.displayCurrency || 'USD';
       state.categories=services.categories || [];
@@ -91,7 +148,7 @@
       }
 
       state.selected=state.selected.filter(sku=>state.services.some(s=>s.sku===sku));
-      state.bookings=bookings.bookings || [];
+      state.bookings=(databaseBookings !== null ? databaseBookings : (fallbackBookings.bookings || []));
       state.schedule=schedule || {monthlySchedule:{}};
       const saved=localStorage.getItem('salonBookingDraft');
       if(saved){ try { const d=JSON.parse(saved); state.selected=d.selected||[]; state.date=d.date||null; state.start=d.start||null; } catch(e){} }
@@ -606,24 +663,55 @@
       cur+=duration(s);
       return {serviceSku:s.sku,start:st,end:en};
     });
+    const customer={name,phone,email,notes};
 
-    // Save locally first. This is the current test source of truth and also
-    // makes the selected time unavailable immediately on this browser.
-    const local=getLocalBookings();
+    if(submitButton){
+      submitButton.disabled=true;
+      submitButton.dataset.originalText=submitButton.textContent;
+      submitButton.textContent=t('Checking availability…','جارٍ التحقق من التوفر…');
+    }
+
+    // Supabase is now the shared source of truth. The database function also
+    // performs the overlap check inside the transaction, so two customers
+    // cannot successfully reserve the same time at the same moment.
+    let databaseBooking=null;
+    try {
+      databaseBooking=await createDatabaseBooking({
+        id,date:state.date,status:'pending',customer,items,total:total(),currency:state.currency
+      });
+    } catch(e) {
+      console.error('Could not create Supabase booking:',e);
+      const unavailable=/TIME_SLOT_UNAVAILABLE|overlap|already booked|not available/i.test(String(e.message||''));
+      err.textContent=unavailable
+        ? t('That time was just booked. Please choose another time.','تم حجز هذا الوقت للتو. يرجى اختيار وقت آخر.')
+        : t('We could not save your booking. Please try again.','تعذر حفظ الحجز. يرجى المحاولة مرة أخرى.');
+      if(unavailable) showStep(2);
+      if(submitButton){
+        submitButton.disabled=false;
+        submitButton.textContent=submitButton.dataset.originalText || t('Request appointment','إرسال طلب الحجز');
+      }
+      // Refresh slots after a race/conflict.
+      if(unavailable){
+        try { state.bookings=await loadDatabaseBookingSlots() || state.bookings; renderCalendar(); renderTimeSlots(); } catch(refreshError){}
+      }
+      return;
+    }
+
+    // Keep the local copy only as a test/fallback cache. CRM and availability
+    // use Supabase as the shared source of truth.
+    const local=getLocalBookings().filter(b=>String(b.id)!==String(id));
     local.push({
       id,
       date:state.date,
-      status:'confirmed',
+      status:'pending',
       items,
-      customer:{name,phone,email,notes},
+      customer,
       total:total(),
       currency:state.currency
     });
     localStorage.setItem('salonTestBookings',JSON.stringify(local));
 
     if(submitButton){
-      submitButton.disabled=true;
-      submitButton.dataset.originalText=submitButton.textContent;
       submitButton.textContent=t('Sending request…','جارٍ إرسال الطلب…');
     }
 
@@ -645,12 +733,17 @@
       const notification = emailSent
         ? t('Booking notification sent to the salon.','تم إرسال إشعار الحجز إلى الصالون.')
         : (emailError && emailError.status === 429
-          ? t('Your booking was saved, but the email service is temporarily rate-limited. The salon can still see this test booking on this browser.','تم حفظ الحجز، لكن خدمة البريد وصلت مؤقتاً إلى حد الإرسال. يمكن للصالون رؤية الحجز التجريبي على هذا المتصفح.')
+          ? t('Your booking was saved, but the email service is temporarily rate-limited. The salon can still see the booking in the CRM.','تم حفظ الحجز، لكن خدمة البريد وصلت مؤقتاً إلى حد الإرسال. يمكن للصالون رؤية الحجز في نظام إدارة الحجوزات.')
           : t('Your booking was saved. The email notification could not be sent right now.','تم حفظ الحجز، لكن تعذر إرسال إشعار البريد الإلكتروني حالياً.'));
       success.innerHTML += `<p class="booking-notification-status ${emailSent?'is-sent':'is-warning'}">${esc(notification)}</p>`;
     }
 
     localStorage.removeItem('salonBookingDraft');
+    state.bookings=state.bookings.filter(b=>String(b.id)!==String(id));
+    state.bookings.push({
+      id,date:state.date,status:'pending',items,customer,total:total(),currency:state.currency
+    });
+
     if(submitButton){
       submitButton.disabled=false;
       submitButton.textContent=submitButton.dataset.originalText || t('Request appointment','إرسال طلب الحجز');
