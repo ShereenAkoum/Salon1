@@ -156,42 +156,31 @@
               <div class="crm-search-box"><span>⌕</span><input id="booking-search" type="search" placeholder="Search customer, phone, email or booking reference"></div>
               <select id="booking-date-filter" class="crm-booking-filter"><option value="all">All dates</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="past">Past</option></select>
               <div class="crm-view-toggle" role="group" aria-label="Booking view">
-                <button type="button" class="crm-view-toggle-btn" data-booking-view="list">☷ <span>List</span></button>
-                <button type="button" class="crm-view-toggle-btn is-active" data-booking-view="calendar">▦ <span>Calendar</span></button>
+                <button type="button" class="is-active" data-booking-view="schedule">Schedule</button>
+                <button type="button" data-booking-view="list">List</button>
               </div>
             </div>
             <div id="bookings-message" class="crm-small crm-bookings-message"></div>
-
-            <div id="bookings-list-view" class="crm-booking-view crm-hidden">
+            <div id="booking-schedule" class="crm-booking-schedule">
+              <div class="crm-schedule-toolbar">
+                <button id="schedule-prev" type="button" class="crm-btn crm-btn-secondary">←</button>
+                <button id="schedule-today" type="button" class="crm-btn crm-btn-secondary">Today</button>
+                <div class="crm-schedule-heading"><strong id="schedule-range-label">Week</strong><span id="schedule-summary"></span></div><div class="crm-schedule-legend"><span><i class="free"></i> Available</span><span><i class="conflict"></i> Overlap</span></div>
+                <button id="schedule-next" type="button" class="crm-btn crm-btn-secondary">→</button>
+              </div>
+              <div class="crm-schedule-scroll">
+                <div id="booking-schedule-grid" class="crm-schedule-grid"></div>
+              </div>
+            </div>
+            <div id="booking-list" class="crm-booking-list-view">
               <div class="crm-table-wrap">
-                <table class="crm-table crm-bookings-table">
-                  <thead><tr><th>Date & time</th><th>Customer</th><th>Service</th><th>Contact</th><th>Total</th><th>Status</th><th></th></tr></thead>
-                  <tbody id="bookings-table-body"></tbody>
-                </table>
-              </div>
-              <div id="bookings-empty" class="crm-bookings-empty crm-hidden"><div class="crm-bookings-empty-icon">◷</div><h3>No bookings found</h3><p>Try changing your filters or make a new booking.</p></div>
-            </div>
-
-            <div id="bookings-calendar-view" class="crm-booking-view">
-              <div class="crm-calendar-toolbar">
-                <div class="crm-calendar-heading">
-                  <button type="button" class="crm-calendar-nav" id="calendar-prev" aria-label="Previous month">‹</button>
-                  <div><strong id="calendar-month-title">August 2026</strong><span id="calendar-booking-count"></span></div>
-                  <button type="button" class="crm-calendar-nav" id="calendar-next" aria-label="Next month">›</button>
-                </div>
-                <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="calendar-today">Today</button>
-              </div>
-              <div class="crm-calendar-weekdays">
-                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
-              </div>
-              <div id="bookings-calendar-grid" class="crm-calendar-grid"></div>
-              <div class="crm-calendar-legend">
-                <span><i class="crm-legend-dot pending"></i>Pending</span>
-                <span><i class="crm-legend-dot confirmed"></i>Confirmed</span>
-                <span><i class="crm-legend-dot completed"></i>Completed</span>
-                <span><i class="crm-legend-dot cancelled"></i>Cancelled</span>
+              <table class="crm-table crm-bookings-table">
+                <thead><tr><th>Date & time</th><th>Customer</th><th>Service</th><th>Contact</th><th>Total</th><th>Status</th><th></th></tr></thead>
+                <tbody id="bookings-table-body"></tbody>
+              </table>
               </div>
             </div>
+            <div id="bookings-empty" class="crm-bookings-empty crm-hidden"><div class="crm-bookings-empty-icon">◷</div><h3>No bookings found</h3><p>New test bookings made on this browser will appear here.</p></div>
           </div>
         </section>
         <div id="booking-detail-modal" class="crm-modal crm-hidden" aria-hidden="true">

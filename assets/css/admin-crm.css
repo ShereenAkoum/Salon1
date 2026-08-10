@@ -112,68 +112,45 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 @media(max-width:900px){.crm-booking-stats{grid-template-columns:repeat(3,1fr)}.crm-bookings-toolbar{flex-direction:column;align-items:stretch}.crm-booking-filter{width:100%}}
 @media(max-width:620px){.crm-booking-stats{grid-template-columns:1fr 1fr}.crm-modal-panel{padding:24px 18px}.crm-detail-grid{grid-template-columns:1fr}.crm-booking-stat{padding:12px}}
 
+/* --- Booking schedule / time grid --- */
+.crm-view-toggle{display:flex;border:1px solid var(--crm-line);background:#f8f5f2;border-radius:11px;padding:3px;flex-shrink:0}
+.crm-view-toggle button{border:0;background:transparent;padding:9px 13px;border-radius:8px;color:var(--crm-muted);font:700 12px inherit;cursor:pointer}
+.crm-view-toggle button.is-active{background:#fff;color:var(--crm-ink);box-shadow:0 2px 7px rgba(52,38,30,.08)}
+.crm-booking-schedule{border:1px solid var(--crm-line);border-radius:16px;overflow:hidden;background:#fff}
+.crm-schedule-toolbar{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--crm-line);background:#fcfaf8}
+.crm-schedule-toolbar .crm-btn{padding:8px 12px}
+.crm-schedule-heading{flex:1;text-align:center;display:flex;flex-direction:column;gap:2px}
+.crm-schedule-heading strong{font-size:14px}.crm-schedule-heading span{font-size:11px;color:var(--crm-muted)}
+.crm-schedule-scroll{overflow:auto;max-height:680px}
+.crm-schedule-grid{min-width:1120px}
+.crm-schedule-head,.crm-schedule-body{display:grid;grid-template-columns:var(--schedule-cols)}
+.crm-schedule-corner{border-right:1px solid var(--crm-line);border-bottom:1px solid var(--crm-line);background:#faf8f6;min-height:66px}
+.crm-schedule-day-head{min-height:66px;border-right:1px solid var(--crm-line);border-bottom:1px solid var(--crm-line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:#faf8f6}
+.crm-schedule-day-head span{text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--crm-muted);font-weight:800}
+.crm-schedule-day-head strong{font-size:19px}.crm-schedule-day-head small{font-size:9px;color:#aaa09a}
+.crm-schedule-day-head.is-today{background:#f7eee9}.crm-schedule-day-head.is-today strong{color:var(--crm-accent)}
+.crm-schedule-time{font-size:10px;color:#948b85;text-align:right;padding:8px 9px 0 0;border-right:1px solid var(--crm-line);border-bottom:1px solid #eee9e5;background:#fcfaf8}
+.crm-schedule-cell{position:relative;border-right:1px solid #eee9e5;border-bottom:1px solid #eee9e5;background:linear-gradient(to bottom,transparent 31px,#f5f1ee 32px,transparent 33px)}
+.crm-schedule-body{position:relative}
+.crm-schedule-booking{position:absolute;z-index:3;border:0;border-left:4px solid var(--crm-accent);border-radius:9px;padding:7px 8px;text-align:left;overflow:hidden;cursor:pointer;background:#f7eee9;color:#3d302a;box-shadow:0 3px 10px rgba(52,38,30,.08);font:inherit}
+.crm-schedule-booking:hover{filter:brightness(.98);box-shadow:0 6px 15px rgba(52,38,30,.13)}
+.crm-schedule-booking .crm-schedule-time{display:block;border:0;background:transparent;padding:0;text-align:left;font-size:9px;color:#806e64;white-space:nowrap}
+.crm-schedule-booking strong{display:block;font-size:11px;margin:2px 0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.crm-schedule-booking>span:last-child{display:block;font-size:10px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.crm-schedule-booking.status-confirmed{background:#edf7f0;border-left-color:#4c9b68}.crm-schedule-booking.status-pending{background:#fff5df;border-left-color:#d09a36}.crm-schedule-booking.status-completed{background:#edf3fb;border-left-color:#5c80b1}.crm-schedule-booking.status-cancelled{background:#faeded;border-left-color:#c75d5d;opacity:.72}
+.crm-booking-list-view{margin-top:0}
+@media(max-width:900px){.crm-bookings-toolbar{flex-wrap:wrap}.crm-view-toggle{margin-left:auto}.crm-schedule-grid{min-width:1000px}}
+@media(max-width:620px){.crm-view-toggle{width:100%}.crm-view-toggle button{flex:1}.crm-schedule-toolbar .crm-btn{padding:8px 10px}.crm-schedule-heading{min-width:130px}}
 
-/* --- Bookings calendar --- */
-.crm-view-toggle{display:flex;align-items:center;border:1px solid var(--crm-line);background:#f7f3ef;border-radius:12px;padding:3px;gap:2px;flex-shrink:0}
-.crm-view-toggle-btn{border:0;background:transparent;color:#756a63;border-radius:9px;padding:9px 12px;cursor:pointer;font:700 12px inherit;display:flex;align-items:center;gap:6px;transition:.18s}
-.crm-view-toggle-btn:hover{color:var(--crm-ink)}
-.crm-view-toggle-btn.is-active{background:#fff;color:var(--crm-ink);box-shadow:0 3px 10px rgba(52,38,30,.08)}
-.crm-booking-view.crm-hidden{display:none!important}
-.crm-calendar-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:2px 2px 16px}
-.crm-calendar-heading{display:flex;align-items:center;gap:12px}
-.crm-calendar-heading>div{min-width:185px;text-align:center}
-.crm-calendar-heading strong{display:block;font-size:19px;letter-spacing:-.25px}
-.crm-calendar-heading span{display:block;color:var(--crm-muted);font-size:11px;margin-top:3px}
-.crm-calendar-nav{width:36px;height:36px;border:1px solid var(--crm-line);background:#fff;border-radius:50%;cursor:pointer;color:var(--crm-ink);font-size:23px;line-height:1}
-.crm-calendar-nav:hover{border-color:#ccb2a5;background:#fcfaf8}
-.crm-calendar-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border:1px solid var(--crm-line);border-bottom:0;border-radius:14px 14px 0 0;overflow:hidden;background:#faf8f6}
-.crm-calendar-weekdays span{padding:11px 10px;text-align:left;text-transform:uppercase;letter-spacing:.08em;font-size:10px;font-weight:800;color:#897d75;border-right:1px solid var(--crm-line)}
-.crm-calendar-weekdays span:last-child{border-right:0}
-.crm-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(142px,auto);border-left:1px solid var(--crm-line);border-top:1px solid var(--crm-line);overflow:hidden;border-radius:0 0 14px 14px}
-.crm-calendar-day{min-width:0;background:#fff;border-right:1px solid var(--crm-line);border-bottom:1px solid var(--crm-line);padding:9px;position:relative}
-.crm-calendar-day.is-outside{background:#fbfaf9}
-.crm-calendar-day.is-outside .crm-calendar-day-number{color:#c5bdb7}
-.crm-calendar-day.is-today{background:#fffaf7}
-.crm-calendar-day.is-today .crm-calendar-day-number{background:var(--crm-accent);color:#fff}
-.crm-calendar-day-head{height:27px;display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
-.crm-calendar-day-number{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#5e554f}
-.crm-calendar-day-count{font-size:10px;color:var(--crm-muted);background:#f2ede9;padding:3px 6px;border-radius:999px}
-.crm-calendar-events{display:grid;gap:5px}
-.crm-calendar-event{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:6px;row-gap:1px;width:100%;text-align:left;border:0;border-left:3px solid var(--crm-accent);border-radius:7px;background:#f8f1ed;padding:6px 7px;cursor:pointer;color:var(--crm-ink);min-width:0}
-.crm-calendar-event:hover{filter:brightness(.97);transform:translateY(-1px)}
-.crm-calendar-event-time{font-size:9px;font-weight:800;color:#766a62;grid-column:1}
-.crm-calendar-event-name{font-size:10px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;grid-column:2}
-.crm-calendar-event-service{font-size:9px;color:#8b8078;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;grid-column:2}
-.crm-calendar-event-pending{border-left-color:#d39b35;background:#fff8e9}
-.crm-calendar-event-confirmed{border-left-color:#3c8c61;background:#edf8f1}
-.crm-calendar-event-completed{border-left-color:#4e78ae;background:#edf3fb}
-.crm-calendar-event-cancelled{border-left-color:#b85a5a;background:#fbefef;opacity:.78}
-.crm-calendar-more{border:0;background:transparent;color:var(--crm-accent-dark);font:800 10px inherit;text-align:left;padding:2px 4px;cursor:pointer}
-.crm-calendar-more:hover{text-decoration:underline}
-.crm-calendar-legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:13px 3px 0;color:var(--crm-muted);font-size:11px}
-.crm-calendar-legend span{display:flex;align-items:center;gap:6px}
-.crm-legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.crm-legend-dot.pending{background:#d39b35}.crm-legend-dot.confirmed{background:#3c8c61}.crm-legend-dot.completed{background:#4e78ae}.crm-legend-dot.cancelled{background:#b85a5a}
-@media(max-width:900px){
-  .crm-bookings-toolbar{display:grid;grid-template-columns:1fr 1fr}
-  .crm-search-box{grid-column:1/-1}
-  .crm-view-toggle{justify-content:center}
-  .crm-calendar-grid{grid-auto-rows:minmax(120px,auto)}
-  .crm-calendar-day{padding:7px}
-}
-@media(max-width:620px){
-  .crm-bookings-toolbar{display:flex;flex-direction:column;align-items:stretch}
-  .crm-view-toggle{width:100%;justify-content:stretch}
-  .crm-view-toggle-btn{flex:1;justify-content:center}
-  .crm-calendar-heading>div{min-width:130px}
-  .crm-calendar-heading strong{font-size:16px}
-  .crm-calendar-weekdays span{padding:8px 4px;font-size:8px;text-align:center}
-  .crm-calendar-grid{grid-auto-rows:minmax(100px,auto)}
-  .crm-calendar-day{padding:5px}
-  .crm-calendar-event{padding:5px 4px;border-left-width:2px}
-  .crm-calendar-event-service{display:none}
-  .crm-calendar-event-name{font-size:9px}
-  .crm-calendar-event-time{font-size:8px}
-  .crm-calendar-day-count{display:none}
-  .crm-calendar-legend{gap:9px}
-}
+/* Availability and overlap indicators */
+.crm-schedule-free{position:absolute;z-index:1;border:1px dashed #d9d1cb;border-radius:8px;background:rgba(248,250,248,.78);padding:6px 7px;pointer-events:none;overflow:hidden}
+.crm-schedule-free span{display:block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#7b8a7f}
+.crm-schedule-free small{display:block;margin-top:2px;font-size:9px;color:#9a938d;white-space:nowrap}
+.crm-schedule-booking{z-index:4}
+.crm-schedule-booking.has-overlap{outline:2px solid #c75d5d;outline-offset:1px}
+.crm-schedule-booking .crm-overlap-flag{display:inline-block;margin-top:2px;padding:1px 5px;border-radius:5px;background:#c75d5d;color:#fff;font-size:8px;font-style:normal;font-weight:800;text-transform:uppercase}
+.crm-schedule-legend{display:flex;gap:10px;align-items:center;font-size:10px;color:var(--crm-muted);white-space:nowrap}
+.crm-schedule-legend span{display:inline-flex;align-items:center;gap:4px}
+.crm-schedule-legend i{width:8px;height:8px;border-radius:3px;display:inline-block;border:1px solid #d9d1cb;background:#f8faf8}
+.crm-schedule-legend i.conflict{background:#c75d5d;border-color:#c75d5d}
+@media(max-width:900px){.crm-schedule-legend{display:none}}

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { categories: [], services: [], users: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'calendar', calendarDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { categories: [], services: [], users: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'schedule', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -234,98 +234,170 @@
     return true;
   }
 
-  function calendarDateKey(date) {
-    var y = date.getFullYear();
-    var m = String(date.getMonth() + 1).padStart(2, '0');
-    var d = String(date.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + d;
+
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function dateKey(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  function parseTimeMinutes(t){
+    if(!t) return null;
+    var p=String(t).split(':'); var h=Number(p[0]), m=Number(p[1]||0);
+    return isNaN(h)||isNaN(m)?null:h*60+m;
+  }
+  function formatTime12(t){
+    var mins=parseTimeMinutes(t); if(mins==null)return '—';
+    var h=Math.floor(mins/60), m=mins%60, ap=h>=12?'PM':'AM', hh=h%12||12;
+    return hh+':'+pad2(m)+' '+ap;
+  }
+  function startOfWeek(d){
+    var x=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    var day=x.getDay(); x.setDate(x.getDate()-day); return x;
+  }
+  function sameDay(a,b){ return dateKey(a)===dateKey(b); }
+
+  function scheduleVisibleBookings(){
+    return state.bookings.filter(bookingMatches).filter(function(b){ return !!b.date && !!bookingStart(b); });
   }
 
-  function calendarMonthLabel(date) {
-    return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+  function bookingRange(b) {
+    var start = parseTimeMinutes(bookingStart(b));
+    var end = parseTimeMinutes(bookingEnd(b));
+    if (start == null) return null;
+    if (end == null || end <= start) end = start + 30;
+    return {start:start,end:end};
   }
 
-  function renderBookingsCalendar() {
-    var grid = $('bookings-calendar-grid');
-    if (!grid) return;
+  function isBlockingStatus(b) {
+    var s = bookingStatus(b);
+    return s === 'pending' || s === 'confirmed';
+  }
 
-    var month = new Date(state.calendarDate.getFullYear(), state.calendarDate.getMonth(), 1);
-    var firstDay = month.getDay();
-    var daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-    var prevDays = new Date(month.getFullYear(), month.getMonth(), 0).getDate();
-    var cells = 42;
-    var visible = state.bookings.filter(bookingMatches);
-    var grouped = {};
+  function overlaps(a,b) {
+    return a && b && a.start < b.end && b.start < a.end;
+  }
 
-    visible.forEach(function(b) {
-      if (!b.date) return;
-      var key = String(b.date).slice(0, 10);
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(b);
+  function dayBookings(date) {
+    return state.bookings.filter(function(b){
+      return b.date === date && !!bookingRange(b) && bookingStatus(b) !== 'cancelled';
+    }).sort(function(a,b){ return bookingRange(a).start - bookingRange(b).start; });
+  }
+
+  function hasBlockingOverlap(candidate, ignoreId) {
+    var range = bookingRange(candidate);
+    if (!range) return null;
+    return state.bookings.find(function(b){
+      if (ignoreId != null && String(b.id) === String(ignoreId)) return false;
+      if (b.date !== candidate.date || !isBlockingStatus(b)) return false;
+      return overlaps(range, bookingRange(b));
+    }) || null;
+  }
+
+  function freeIntervalsForDay(date, hourStart, hourEnd) {
+    var booked = dayBookings(date).filter(function(b){ return isBlockingStatus(b); })
+      .map(bookingRange).sort(function(a,b){ return a.start-b.start; });
+    var result = [], cursor = hourStart * 60;
+    booked.forEach(function(r){
+      var start = Math.max(r.start, hourStart*60);
+      var end = Math.min(r.end, hourEnd*60);
+      if (end <= hourStart*60 || start >= hourEnd*60) return;
+      if (start > cursor) result.push({start:cursor,end:start});
+      cursor = Math.max(cursor,end);
     });
+    if (cursor < hourEnd*60) result.push({start:cursor,end:hourEnd*60});
+    return result;
+  }
 
-    Object.keys(grouped).forEach(function(key) {
-      grouped[key].sort(function(a,b) {
-        return String(bookingStart(a)).localeCompare(String(bookingStart(b)));
+  function freeIntervalLabel(r) {
+    return formatTime12(pad2(Math.floor(r.start/60))+':'+pad2(r.start%60)) + ' – ' +
+           formatTime12(pad2(Math.floor(r.end/60))+':'+pad2(r.end%60));
+  }
+
+  function renderSchedule(){
+    var grid=$('booking-schedule-grid'); if(!grid)return;
+    var weekStart=startOfWeek(state.scheduleDate), days=[];
+    for(var i=0;i<7;i++){var d=new Date(weekStart);d.setDate(weekStart.getDate()+i);days.push(d);}
+    var visible=scheduleVisibleBookings(), hourStart=8, hourEnd=20, rowH=64, labelW=74;
+    var cols='74px repeat(7,minmax(150px,1fr))';
+    grid.style.setProperty('--schedule-cols',cols);
+
+    // Flag overlaps for the current view.
+    visible.forEach(function(b){
+      var r=bookingRange(b);
+      b.__crmOverlap=!!r && state.bookings.some(function(other){
+        if(String(other.id)===String(b.id) || other.date!==b.date || bookingStatus(other)==='cancelled') return false;
+        return overlaps(r,bookingRange(other));
       });
     });
 
-    $('calendar-month-title').textContent = calendarMonthLabel(month);
-    $('calendar-booking-count').textContent = visible.length + (visible.length === 1 ? ' booking' : ' bookings');
-
-    var html = '';
-    for (var i = 0; i < cells; i++) {
-      var dayNumber = i - firstDay + 1;
-      var dateObj;
-      var outside = false;
-      if (dayNumber < 1) {
-        dateObj = new Date(month.getFullYear(), month.getMonth() - 1, prevDays + dayNumber);
-        outside = true;
-      } else if (dayNumber > daysInMonth) {
-        dateObj = new Date(month.getFullYear(), month.getMonth() + 1, dayNumber - daysInMonth);
-        outside = true;
-      } else {
-        dateObj = new Date(month.getFullYear(), month.getMonth(), dayNumber);
-      }
-
-      var key = calendarDateKey(dateObj);
-      var todayKey = calendarDateKey(new Date());
-      var classes = 'crm-calendar-day' + (outside ? ' is-outside' : '') + (key === todayKey ? ' is-today' : '');
-      var events = grouped[key] || [];
-      var eventsHtml = events.slice(0, 4).map(function(b) {
-        var status = bookingStatus(b);
-        var c = bookingCustomer(b);
-        var names = bookingServiceNames(b);
-        var time = bookingStart(b) || '';
-        return '<button type="button" class="crm-calendar-event crm-calendar-event-' + escapeHtml(status) + '" data-calendar-booking="' + escapeHtml(b.id || '') + '">' +
-          '<span class="crm-calendar-event-time">' + escapeHtml(time) + '</span>' +
-          '<span class="crm-calendar-event-name">' + escapeHtml(c.name || 'Customer') + '</span>' +
-          '<span class="crm-calendar-event-service">' + escapeHtml(names.join(', ') || 'Service') + '</span>' +
-        '</button>';
-      }).join('');
-
-      if (events.length > 4) {
-        eventsHtml += '<button type="button" class="crm-calendar-more" data-calendar-day="' + escapeHtml(key) + '">' + (events.length - 4) + ' more</button>';
-      }
-
-      html += '<div class="' + classes + '">' +
-        '<div class="crm-calendar-day-head"><span class="crm-calendar-day-number">' + dateObj.getDate() + '</span>' + (events.length ? '<span class="crm-calendar-day-count">' + events.length + '</span>' : '') + '</div>' +
-        '<div class="crm-calendar-events">' + eventsHtml + '</div>' +
+    var head='<div class="crm-schedule-corner"><span>Time</span></div>';
+    days.forEach(function(d){
+      var key=dateKey(d), count=visible.filter(function(b){return b.date===key;}).length;
+      var free=freeIntervalsForDay(key,hourStart,hourEnd);
+      var today=sameDay(d,new Date());
+      head+='<div class="crm-schedule-day-head '+(today?'is-today':'')+'">'+
+        '<span>'+d.toLocaleDateString(undefined,{weekday:'short'})+'</span>'+
+        '<strong>'+d.getDate()+'</strong>'+
+        '<small>'+count+' '+(count===1?'booking':'bookings')+' · '+(free.length?free.length+' free':'fully booked')+'</small>'+
       '</div>';
-    }
+    });
 
-    grid.innerHTML = html;
+    var body='';
+    for(var h=hourStart;h<hourEnd;h++){
+      body+='<div class="crm-schedule-time">'+formatTime12(pad2(h)+':00')+'</div>';
+      days.forEach(function(d){body+='<div class="crm-schedule-cell" data-schedule-date="'+dateKey(d)+'" style="height:'+rowH+'px"></div>';});
+    }
+    grid.innerHTML='<div class="crm-schedule-head" style="grid-template-columns:'+cols+'">'+head+'</div>'+
+      '<div class="crm-schedule-body" style="grid-template-columns:'+cols+'">'+body+'</div>';
+
+    var bodyEl=grid.querySelector('.crm-schedule-body');
+
+    // Exact free windows are shown behind bookings.
+    days.forEach(function(d,dayIndex){
+      freeIntervalsForDay(dateKey(d),hourStart,hourEnd).forEach(function(r){
+        var el=document.createElement('div');
+        el.className='crm-schedule-free';
+        el.style.left='calc('+labelW+'px + '+dayIndex+' * ((100% - '+labelW+'px) / 7) + 4px)';
+        el.style.width='calc((100% - '+labelW+'px) / 7 - 8px)';
+        el.style.top=((r.start-hourStart*60)/60*rowH)+'px';
+        el.style.height=Math.max(22,(r.end-r.start)/60*rowH-4)+'px';
+        el.innerHTML='<span>Available</span><small>'+escapeHtml(freeIntervalLabel(r))+'</small>';
+        bodyEl.appendChild(el);
+      });
+    });
+
+    visible.forEach(function(b){
+      var dayIndex=days.findIndex(function(d){return b.date===dateKey(d);});
+      if(dayIndex<0)return;
+      var range=bookingRange(b); if(!range)return;
+      var clampedStart=Math.max(range.start,hourStart*60);
+      var clampedEnd=Math.min(Math.max(range.end,range.start+15),hourEnd*60);
+      if(clampedEnd<=hourStart*60 || clampedStart>=hourEnd*60)return;
+      var card=document.createElement('button'), c=bookingCustomer(b), names=bookingServiceNames(b), status=bookingStatus(b);
+      card.type='button';
+      card.className='crm-schedule-booking status-'+status+(b.__crmOverlap?' has-overlap':'');
+      card.style.left='calc('+labelW+'px + '+dayIndex+' * ((100% - '+labelW+'px) / 7) + 4px)';
+      card.style.width='calc((100% - '+labelW+'px) / 7 - 8px)';
+      card.style.top=((clampedStart-hourStart*60)/60*rowH)+'px';
+      card.style.height=Math.max(38,(clampedEnd-clampedStart)/60*rowH-4)+'px';
+      card.setAttribute('data-view-booking',b.id||'');
+      card.title=b.__crmOverlap?'Overlap detected — review this booking':'Open booking details';
+      card.innerHTML='<span class="crm-schedule-time">'+escapeHtml(formatTime12(bookingStart(b)))+' – '+escapeHtml(formatTime12(bookingEnd(b)))+'</span>'+
+        '<strong>'+escapeHtml(c.name||'Customer')+'</strong><span>'+escapeHtml(names.join(', ')||'Booking')+'</span>'+
+        (b.__crmOverlap?'<em class="crm-overlap-flag">Overlap</em>':'');
+      bodyEl.appendChild(card);
+    });
+
+    $('schedule-range-label').textContent=days[0].toLocaleDateString(undefined,{month:'long',day:'numeric'})+' – '+days[6].toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'});
+    var conflicts=visible.filter(function(b){return b.__crmOverlap;}).length;
+    $('schedule-summary').textContent=visible.length+' '+(visible.length===1?'booking':'bookings')+' this week'+(conflicts?' · '+conflicts+' overlap'+(conflicts===1?'':'s')+' to review':'');
   }
 
-  function setBookingView(view) {
-    state.bookingView = view === 'list' ? 'list' : 'calendar';
-    var list = $('bookings-list-view'), calendar = $('bookings-calendar-view');
-    if (list) list.classList.toggle('crm-hidden', state.bookingView !== 'list');
-    if (calendar) calendar.classList.toggle('crm-hidden', state.bookingView !== 'calendar');
-    document.querySelectorAll('[data-booking-view]').forEach(function(btn) {
-      btn.classList.toggle('is-active', btn.getAttribute('data-booking-view') === state.bookingView);
-    });
-    if (state.bookingView === 'calendar') renderBookingsCalendar();
+  function setBookingView(view){
+    state.bookingView=view==='list'?'list':'schedule';
+    document.querySelectorAll('[data-booking-view]').forEach(function(b){b.classList.toggle('is-active',b.getAttribute('data-booking-view')===state.bookingView);});
+    var sched=$('booking-schedule'), list=$('booking-list');
+    if(sched)sched.classList.toggle('crm-hidden',state.bookingView!=='schedule');
+    if(list)list.classList.toggle('crm-hidden',state.bookingView!=='list');
+    if(state.bookingView==='schedule')renderSchedule();
   }
 
   function renderBookings() {
@@ -352,7 +424,7 @@
     }).join('');
     $('bookings-empty').classList.toggle('crm-hidden', visible.length !== 0);
     updateBookingCounts();
-    if (state.bookingView === 'calendar') renderBookingsCalendar();
+    if(state.bookingView==='schedule') renderSchedule();
   }
 
   function updateBookingCounts() {
@@ -409,6 +481,19 @@
 
   function updateBookingStatus(id, status) {
     var b = findBooking(id); if (!b) return;
+    status = String(status || 'pending').toLowerCase();
+
+    if (status === 'pending' || status === 'confirmed') {
+      var conflict = hasBlockingOverlap(b, id);
+      if (conflict) {
+        var cc = bookingCustomer(conflict);
+        message('Cannot mark this booking ' + statusLabel(status).toLowerCase() +
+          '. It overlaps ' + (cc.name || 'another booking') + ' (' + conflict.id + ').', 'error');
+        renderBookingDetail(id);
+        return;
+      }
+    }
+
     b.status = status;
     persistBookings();
     renderBookings();
@@ -542,31 +627,17 @@
     document.querySelectorAll('[data-view-target]').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view-target'));});});
     $('mobile-menu').addEventListener('click',function(){$('crm-sidebar').classList.toggle('open');});
     $('bookings-refresh').addEventListener('click',function(){loadBookings().catch(function(e){message(e.message,'error');});});
-    document.querySelectorAll('[data-booking-view]').forEach(function(b){b.addEventListener('click',function(){setBookingView(b.getAttribute('data-booking-view'));});});
-    $('calendar-prev').addEventListener('click',function(){state.calendarDate=new Date(state.calendarDate.getFullYear(),state.calendarDate.getMonth()-1,1);renderBookingsCalendar();});
-    $('calendar-next').addEventListener('click',function(){state.calendarDate=new Date(state.calendarDate.getFullYear(),state.calendarDate.getMonth()+1,1);renderBookingsCalendar();});
-    $('calendar-today').addEventListener('click',function(){state.calendarDate=new Date();renderBookingsCalendar();});
-    $('bookings-calendar-grid').addEventListener('click',function(e){
-      var booking=e.target.closest('[data-calendar-booking]');
-      if(booking){renderBookingDetail(booking.getAttribute('data-calendar-booking'));return;}
-      var more=e.target.closest('[data-calendar-day]');
-      if(more){
-        state.bookingDateFilter='all';
-        var key=more.getAttribute('data-calendar-day');
-        var d=new Date(key+'T12:00:00');
-        state.calendarDate=new Date(d.getFullYear(),d.getMonth(),1);
-        setBookingView('list');
-        renderBookings();
-        var title=$('bookings-message');
-        if(title){title.textContent='Showing the list for '+d.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})+'.';}
-      }
-    });
     $('booking-search').addEventListener('input',function(e){state.bookingSearch=e.target.value;renderBookings();});
     $('booking-date-filter').addEventListener('change',function(e){state.bookingDateFilter=e.target.value;renderBookings();});
     document.querySelectorAll('[data-booking-filter]').forEach(function(b){b.addEventListener('click',function(){state.bookingFilter=b.getAttribute('data-booking-filter');renderBookings();});});
     $('bookings-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-view-booking]');if(b)renderBookingDetail(b.getAttribute('data-view-booking'));});
     document.querySelectorAll('[data-close-booking]').forEach(function(el){el.addEventListener('click',closeBookingDetail);});
     $('booking-detail-content').addEventListener('click',function(e){var b=e.target.closest('[data-booking-status]');if(b)updateBookingStatus(b.getAttribute('data-booking-id'),b.getAttribute('data-booking-status'));});
+    document.querySelectorAll('[data-booking-view]').forEach(function(b){b.addEventListener('click',function(){setBookingView(b.getAttribute('data-booking-view'));});});
+    $('schedule-prev').addEventListener('click',function(){state.scheduleDate.setDate(state.scheduleDate.getDate()-7);renderSchedule();});
+    $('schedule-next').addEventListener('click',function(){state.scheduleDate.setDate(state.scheduleDate.getDate()+7);renderSchedule();});
+    $('schedule-today').addEventListener('click',function(){state.scheduleDate=new Date();renderSchedule();});
+    $('booking-schedule-grid').addEventListener('click',function(e){var b=e.target.closest('[data-view-booking]');if(b)renderBookingDetail(b.getAttribute('data-view-booking'));});
     document.addEventListener('keydown',function(e){if(e.key==='Escape')closeBookingDetail();});
 
     $('service-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-service]');if(b)editService(b.getAttribute('data-edit-service'));});
