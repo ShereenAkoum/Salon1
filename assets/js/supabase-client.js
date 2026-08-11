@@ -89,6 +89,29 @@
       });
     },
 
+    async getFaqSettings() {
+      var result = await window.salonSupabase
+        .from('faq_settings')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (result.error) throw result.error;
+      return result.data || null;
+    },
+
+    async getFaqs() {
+      var result = await window.salonSupabase
+        .from('faqs')
+        .select('*')
+        .eq('active', true)
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true });
+
+      if (result.error) throw result.error;
+      return result.data || [];
+    },
+
     getVoucherImageUrl(imagePath) {
       if (!imagePath) return '';
       if (/^https?:\/\//i.test(String(imagePath))) return String(imagePath);

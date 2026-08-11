@@ -11,16 +11,14 @@
     window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null),
     fetch('assets/data/index.json').then(function (r) { return r.json(); }),
     fetch('assets/data/nav.json').then(function (r) { return r.json(); }),
-    fetch('assets/data/faq.json').then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch('assets/data/booking-date-time.json').then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch('assets/data/booking-review.json').then(function (r) { return r.json(); }).catch(function () { return null; })
   ]).then(function (results) {
     var appSettings = results[0];
     var pageData = results[1];
     var navData = results[2];
-    var faqData = results[3];
-    var bookingDateTimeData = results[4];
-    var bookingReviewData = results[5];
+    var bookingDateTimeData = results[3];
+    var bookingReviewData = results[4];
 
     if (!localStorage.getItem('siteLang') && appSettings && appSettings.default_language) {
       currentLang = String(appSettings.default_language).toLowerCase();
@@ -94,21 +92,6 @@
         translations[fk][lang] = navData[lang][key];
       });
     });
-
-    // Process faq-page.json
-    if (faqData) {
-      ['title', 'description'].forEach(function (field) {
-        ['en', 'ar'].forEach(function (lang) {
-          var val = faqData[field + '-' + lang];
-          if (val) {
-            var fk = 'faq.' + field;
-            if (!translations[fk]) translations[fk] = {};
-            translations[fk][lang] = val;
-          }
-        });
-      });
-    }
-
     // Process booking-date-time.json
     if (bookingDateTimeData) {
       ['back', 'title', 'description'].forEach(function (field) {

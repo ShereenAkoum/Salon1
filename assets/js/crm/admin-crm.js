@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, editingFaqId: null, faqs: [], faqSettings: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -410,6 +410,175 @@
     } finally {
       if (button) { button.disabled = false; button.textContent = 'Save Settings'; }
     }
+  }
+
+
+  async function loadFaqs() {
+    if (!isCrmAdmin()) {
+      state.faqs = [];
+      state.faqSettings = null;
+      return;
+    }
+    var settingsResult = await window.salonSupabase
+      .from('faq_settings')
+      .select('*')
+      .eq('id', 1)
+      .maybeSingle();
+    if (settingsResult.error) throw settingsResult.error;
+    var faqResult = await window.salonSupabase
+      .from('faqs')
+      .select('*')
+      .order('sort_order', {ascending:true})
+      .order('id', {ascending:true});
+    if (faqResult.error) throw faqResult.error;
+
+    state.faqSettings = settingsResult.data || null;
+    state.faqs = faqResult.data || [];
+    renderFaqSettings();
+    renderFaqs();
+  }
+
+  function renderFaqSettings() {
+    var s = state.faqSettings || {};
+    if ($('faq-settings-title-en')) $('faq-settings-title-en').value = s.title_en || '';
+    if ($('faq-settings-title-ar')) $('faq-settings-title-ar').value = s.title_ar || '';
+    if ($('faq-settings-description-en')) $('faq-settings-description-en').value = s.description_en || '';
+    if ($('faq-settings-description-ar')) $('faq-settings-description-ar').value = s.description_ar || '';
+    if ($('faq-settings-active')) $('faq-settings-active').checked = s.active !== false;
+  }
+
+  function renderFaqs() {
+    var tbody = $('faq-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = state.faqs.map(function(f) {
+      var answer = String(f.answer_en || '');
+      if (answer.length > 150) answer = answer.slice(0,147) + '…';
+      return '<tr>' +
+        '<td><strong>'+escapeHtml(f.question_en || '—')+'</strong><br><span class="crm-small" dir="rtl">'+escapeHtml(f.question_ar || '')+'</span></td>' +
+        '<td>'+escapeHtml(answer || '—')+'</td>' +
+        '<td>'+Number(f.sort_order || 0)+'</td>' +
+        '<td>'+(f.active ? '<span class="crm-badge active">Active</span>' : '<span class="crm-badge inactive">Inactive</span>')+'</td>' +
+        '<td><button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" data-edit-faq="'+f.id+'">Edit</button> ' +
+        '<button type="button" class="crm-btn crm-btn-danger crm-btn-sm" data-delete-faq="'+f.id+'">Delete</button></td>' +
+        '</tr>';
+    }).join('') || '<tr><td colspan="5" class="crm-empty">No FAQs found.</td></tr>';
+  }
+
+  function resetFaqForm() {
+    state.editingFaqId = null;
+    if (!$('faq-form')) return;
+    $('faq-form').reset();
+    $('faq-form-title').textContent = 'Add FAQ';
+    $('faq-sort-order').value = state.faqs.length ? String(Math.max.apply(null, state.faqs.map(function(f){ return Number(f.sort_order)||0; })) + 1) : '1';
+    $('faq-active').checked = true;
+    $('faq-form-card').classList.add('crm-hidden');
+  }
+
+  function startFaqCreate() {
+    resetFaqForm();
+    $('faq-form-card').classList.remove('crm-hidden');
+    $('faq-question-en').focus();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function editFaq(id) {
+    var f = state.faqs.find(function(x){ return String(x.id) === String(id); });
+    if (!f) return;
+    state.editingFaqId = f.id;
+    $('faq-question-en').value = f.question_en || '';
+    $('faq-question-ar').value = f.question_ar || '';
+    $('faq-answer-en').value = f.answer_en || '';
+    $('faq-answer-ar').value = f.answer_ar || '';
+    $('faq-sort-order').value = Number(f.sort_order || 0);
+    $('faq-active').checked = f.active !== false;
+    $('faq-form-title').textContent = 'Edit FAQ';
+    $('faq-form-card').classList.remove('crm-hidden');
+    $('faq-question-en').focus();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  async function saveFaq(e) {
+    e.preventDefault();
+    clearMessage();
+    var payload = {
+      question_en: $('faq-question-en').value.trim(),
+      question_ar: $('faq-question-ar').value.trim() || null,
+      answer_en: $('faq-answer-en').value.trim(),
+      answer_ar: $('faq-answer-ar').value.trim() || null,
+      sort_order: Math.max(0, parseInt($('faq-sort-order').value,10) || 0),
+      active: $('faq-active').checked
+    };
+    if (!payload.question_en || !payload.answer_en) {
+      message('English question and answer are required.','error');
+      return;
+    }
+    var result;
+    if (state.editingFaqId) {
+      result = await window.salonSupabase.from('faqs')
+        .update(payload)
+        .eq('id', state.editingFaqId)
+        .select()
+        .maybeSingle();
+    } else {
+      result = await window.salonSupabase.from('faqs')
+        .insert(payload)
+        .select()
+        .maybeSingle();
+    }
+    if (result.error) {
+      message(result.error.message,'error');
+      return;
+    }
+    if (!result.data) {
+      message('FAQ could not be saved. Check that your CRM account is an admin and that FAQ RLS policies are installed.','error');
+      return;
+    }
+    message(state.editingFaqId ? 'FAQ updated.' : 'FAQ added.','success');
+    resetFaqForm();
+    await loadFaqs();
+  }
+
+  async function saveFaqSettings(e) {
+    e.preventDefault();
+    clearMessage();
+    var payload = {
+      id: 1,
+      title_en: $('faq-settings-title-en').value.trim(),
+      title_ar: $('faq-settings-title-ar').value.trim() || null,
+      description_en: $('faq-settings-description-en').value.trim() || null,
+      description_ar: $('faq-settings-description-ar').value.trim() || null,
+      active: $('faq-settings-active').checked
+    };
+    if (!payload.title_en) {
+      message('Please enter the English FAQ title.','error');
+      return;
+    }
+    var result = await window.salonSupabase.from('faq_settings')
+      .upsert(payload, {onConflict:'id'})
+      .select()
+      .maybeSingle();
+    if (result.error) {
+      message(result.error.message,'error');
+      return;
+    }
+    if (!result.data) {
+      message('FAQ page settings could not be saved. Check FAQ settings RLS.','error');
+      return;
+    }
+    message('FAQ page settings saved.','success');
+    await loadFaqs();
+  }
+
+  async function deleteFaq(id) {
+    var f = state.faqs.find(function(x){ return String(x.id) === String(id); });
+    if (!f || !window.confirm('Delete this FAQ? This cannot be undone.')) return;
+    var result = await window.salonSupabase.from('faqs').delete().eq('id', id);
+    if (result.error) {
+      message(result.error.message,'error');
+      return;
+    }
+    message('FAQ deleted.','success');
+    await loadFaqs();
   }
 
   async function loadData() {
@@ -1477,7 +1646,7 @@
       history.replaceState({},document.title,window.location.pathname);
       $('crm-password-setup').classList.add('crm-hidden');
       if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();showLogin();message('Your invitation was accepted, but this account is not authorized for the salon CRM.','error');return;}
-      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
+      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadFaqs();await loadBookings();
       message('Password created. Welcome to the salon CRM.','success');
     } finally {
       if(button){button.disabled=false;button.textContent='Create password →';}
@@ -1490,7 +1659,7 @@
     var result=await window.salonSupabase.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
     if(result.error){message(result.error.message,'error');return;}
     if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();message('This account is not authorized to access the salon CRM.','error');return;}
-    showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
+    showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadFaqs();await loadBookings();
   }
   function applyRoleVisibility(){
     document.querySelectorAll('[data-admin-only]').forEach(function(el){
@@ -1500,7 +1669,7 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
+    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
     $('user-form').addEventListener('submit',inviteUser);$('user-cancel').addEventListener('click',function(){$('user-form-card').classList.add('crm-hidden');});
     $('user-edit-form').addEventListener('submit',saveUser);$('user-edit-cancel').addEventListener('click',function(){$('user-edit-card').classList.add('crm-hidden');state.editingUserId=null;});
     $('password-setup-form').addEventListener('submit',finishPasswordSetup);
@@ -1545,7 +1714,7 @@
         state.currentUserId=session.user.id;showPasswordSetup();
       } else if(await requireAdmin()){
         state.currentUserId=session&&session.user?session.user.id:null;
-        showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
+        showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadFaqs();await loadBookings();
       } else showLogin();
     } catch(e){console.error(e);showLogin();}
 

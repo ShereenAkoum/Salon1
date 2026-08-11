@@ -49,6 +49,7 @@
           <button class="crm-nav-item active" data-view="dashboard"><span>⌂</span> Dashboard</button>
           <button class="crm-nav-item" data-view="services"><span>✂</span> Services</button>
           <button class="crm-nav-item" data-view="vouchers"><span>◇</span> Vouchers</button>
+          <button class="crm-nav-item" data-view="faqs" data-admin-only><span>?</span> FAQs</button>
           <button class="crm-nav-item" data-view="bookings"><span>◷</span> Bookings</button>
           <button class="crm-nav-item" data-view="customers"><span>♙</span> Customers</button>
 <button type="button" class="crm-nav-item" data-view="settings" data-admin-only><span class="crm-nav-icon">⚙</span><span>Settings</span></button>
@@ -227,6 +228,105 @@
     </div>
   </div>
 </section>
+        
+<section id="view-faqs" class="crm-view crm-hidden" data-admin-only>
+  <div class="crm-page-heading">
+    <div>
+      <div class="crm-section-label">Website content</div>
+      <h2>FAQs</h2>
+      <p>Manage the frequently asked questions shown on the website. Content is stored in Supabase.</p>
+    </div>
+    <button id="new-faq-top" class="crm-btn crm-btn-primary" type="button">+ Add FAQ</button>
+  </div>
+
+  <div class="crm-card">
+    <div class="crm-section-label">FAQ page</div>
+    <h3>Page settings</h3>
+    <p class="crm-small">Set the title and introduction visitors see above the FAQ list.</p>
+    <form id="faq-settings-form" class="crm-standard-form">
+      <div class="crm-form-grid">
+        <div class="crm-field">
+          <label for="faq-settings-title-en">English title</label>
+          <input id="faq-settings-title-en" required>
+        </div>
+        <div class="crm-field">
+          <label for="faq-settings-title-ar">Arabic title</label>
+          <input id="faq-settings-title-ar" dir="rtl">
+        </div>
+        <div class="crm-field full">
+          <label for="faq-settings-description-en">English description</label>
+          <textarea id="faq-settings-description-en" rows="3"></textarea>
+        </div>
+        <div class="crm-field full">
+          <label for="faq-settings-description-ar">Arabic description</label>
+          <textarea id="faq-settings-description-ar" rows="3" dir="rtl"></textarea>
+        </div>
+        <label class="crm-check">
+          <input id="faq-settings-active" type="checkbox" checked>
+          <span>Show FAQ page content on website</span>
+        </label>
+      </div>
+      <div class="crm-form-actions">
+        <button type="submit" class="crm-btn crm-btn-primary">Save page settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="faq-form-card" class="crm-card crm-hidden">
+    <div class="crm-section-label">FAQ item</div>
+    <h3 id="faq-form-title">Add FAQ</h3>
+    <form id="faq-form" class="crm-standard-form">
+      <div class="crm-form-grid">
+        <div class="crm-field">
+          <label for="faq-question-en">English question</label>
+          <input id="faq-question-en" required>
+        </div>
+        <div class="crm-field">
+          <label for="faq-question-ar">Arabic question</label>
+          <input id="faq-question-ar" dir="rtl">
+        </div>
+        <div class="crm-field full">
+          <label for="faq-answer-en">English answer</label>
+          <textarea id="faq-answer-en" rows="5" required></textarea>
+        </div>
+        <div class="crm-field full">
+          <label for="faq-answer-ar">Arabic answer</label>
+          <textarea id="faq-answer-ar" rows="5" dir="rtl"></textarea>
+        </div>
+        <div class="crm-field">
+          <label for="faq-sort-order">Sort order</label>
+          <input id="faq-sort-order" type="number" min="0" step="1" value="0">
+          <small>Lower numbers appear first.</small>
+        </div>
+        <label class="crm-check">
+          <input id="faq-active" type="checkbox" checked>
+          <span>Active on website</span>
+        </label>
+      </div>
+      <div class="crm-form-actions">
+        <button id="faq-cancel" type="button" class="crm-btn crm-btn-secondary">Cancel</button>
+        <button type="submit" class="crm-btn crm-btn-primary">Save FAQ</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="crm-card">
+    <div class="crm-toolbar">
+      <div>
+        <div class="crm-section-label">FAQ catalogue</div>
+        <h3>Questions &amp; answers</h3>
+      </div>
+      <button id="faqs-refresh" type="button" class="crm-btn crm-btn-secondary crm-btn-small">↻ Refresh</button>
+    </div>
+    <div class="crm-table-wrap">
+      <table class="crm-table">
+        <thead><tr><th>Question</th><th>Answer</th><th>Order</th><th>Status</th><th></th></tr></thead>
+        <tbody id="faq-table-body"><tr><td colspan="5">Loading FAQs…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
         <section id="view-bookings" class="crm-view crm-hidden">
           <div class="crm-page-heading">
             <div><div class="crm-section-label">Appointments</div><h2>Bookings</h2><p>Review customer requests, manage appointment status and see the full appointment details.</p></div>
@@ -418,6 +518,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=vouchers-image-fix-2"></script>
+  <script src="assets/js/crm/admin-crm.js?v=faq-crm-1"></script>
 </body>
 </html>
