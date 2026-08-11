@@ -39,4 +39,4 @@ Changing Pending/Confirmed/Completed/Cancelled writes the status to Supabase.
 
 ## 5. Existing JSON
 
-`assets/data/bookings.json` is intentionally kept as a fallback/test fixture. It is no longer the normal source of truth when Supabase has bookings.
+Booking availability is read from the Supabase `get_booked_slots` RPC. There is no JSON booking fallback.

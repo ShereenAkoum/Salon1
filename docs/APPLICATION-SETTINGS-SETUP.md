@@ -35,7 +35,6 @@ The public website still has read-only access to active settings.
 
 The public website also includes:
 
-- `assets/data/applicationsetting.json` — local fallback for display currency, currency labels and default language.
-- `assets/js/config/application-settings.js` — loads the JSON baseline first, then overlays active Supabase settings. If Supabase is unavailable, the JSON file is returned automatically.
+- `assets/js/config/application-settings.js` — loads active settings from Supabase. If Supabase is unavailable, it uses small built-in defaults.
 
-Services and durations are read from the Supabase `service_categories` and `services` tables first. If Supabase is unavailable, the website falls back to `assets/data/services.json`.
+Services, prices and durations are read from the Supabase `service_categories` and `services` tables. A missing/invalid service duration defaults to 30 minutes.

@@ -259,7 +259,70 @@
   </div>
 </section>
 
-<section id="view-customers" class="crm-view crm-hidden"><div class="crm-empty-state"><span>♙</span><div class="crm-section-label">Coming next</div><h2>Customers</h2><p>Customer profiles and booking history will appear here.</p></div></section>
+
+<section id="view-customers" class="crm-view crm-hidden">
+  <div class="crm-toolbar">
+    <div>
+      <div class="crm-eyebrow">Customer management</div>
+      <h2>Customers</h2>
+      <p class="crm-small">Manage customer details and see their booking history.</p>
+    </div>
+    <div class="crm-toolbar-actions">
+      <input id="customer-search" class="crm-input" type="search" placeholder="Search name, phone or email">
+      <button type="button" class="crm-btn crm-btn-primary" onclick="startCustomerCreate()">+ Add customer</button>
+    </div>
+  </div>
+
+  <div id="customer-form-card" class="crm-card crm-hidden">
+    <div class="crm-card-header">
+      <h3 id="customer-form-title">Add customer</h3>
+    </div>
+    <form id="customer-form">
+      <div class="crm-form-grid">
+        <label><span>Name</span><input id="customer-name" required></label>
+        <label><span>Phone</span><input id="customer-phone" type="tel"></label>
+        <label><span>Email</span><input id="customer-email" type="email"></label>
+      </div>
+      <label><span>Notes</span><textarea id="customer-notes" rows="3"></textarea></label>
+      <div class="crm-actions-inline">
+        <button type="submit" class="crm-btn crm-btn-primary">Save customer</button>
+        <button type="button" id="customer-cancel" class="crm-btn crm-btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="crm-card">
+    <div class="crm-table-wrap">
+      <table class="crm-table">
+        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="customers-table-body"><tr><td colspan="5">Loading customers…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="customer-detail-card" class="crm-card crm-hidden">
+    <div class="crm-card-header">
+      <div>
+        <div class="crm-eyebrow">Customer profile</div>
+        <h3 id="customer-detail-name">Customer</h3>
+        <p id="customer-detail-contact" class="crm-small"></p>
+      </div>
+      <button type="button" id="customer-detail-close" class="crm-btn crm-btn-secondary">Close</button>
+    </div>
+    <p id="customer-detail-notes" class="crm-small"></p>
+    <div class="crm-stats-grid">
+      <div class="crm-stat"><span>Bookings</span><strong id="customer-booking-count">0</strong></div>
+      <div class="crm-stat"><span>Total spent</span><strong>$<span id="customer-total-spent">0.00</span></strong></div>
+    </div>
+    <div class="crm-table-wrap">
+      <table class="crm-table">
+        <thead><tr><th>Date</th><th>Time</th><th>Services</th><th>Status</th><th>Total</th></tr></thead>
+        <tbody id="customer-booking-history"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
       </div>
     </div>
   </main>

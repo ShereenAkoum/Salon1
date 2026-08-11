@@ -54,14 +54,17 @@
 
   async function loadDatabaseBookingSlots(){
     if(!window.salonSupabase || !window.salonSupabase.rpc) return null;
+
     const from = new Date();
     from.setHours(0,0,0,0);
     const to = new Date(from);
     to.setDate(to.getDate()+370);
+
     const result = await window.salonSupabase.rpc('get_booked_slots',{
       p_from: isoDate(from),
       p_to: isoDate(to)
     });
+
     if(result.error) throw result.error;
 
     const grouped={};
@@ -79,6 +82,7 @@
         end:String(row.end_time).slice(0,5)
       });
     });
+
     return Object.values(grouped);
   }
 
@@ -176,12 +180,6 @@
     };
   }
 
-  async function loadServicesFromJSON(){
-    return normalizeJSONServices(
-      await loadJSON('assets/data/services.json')
-    );
-  }
-
   async function loadServicesFromSupabase(){
     if(!window.salonSupabase){
       throw new Error('Supabase client is not available.');
@@ -217,13 +215,11 @@
       );
       return { source: 'supabase', data: services };
     } catch (databaseError) {
-      console.warn(
-        '[Booking] Supabase service catalogue unavailable; using assets/data/services.json fallback.',
+      console.error(
+        '[Booking] Supabase service catalogue unavailable.',
         databaseError
       );
-
-      const fallback = await loadServicesFromJSON();
-      return { source: 'json-fallback', data: fallback };
+      throw databaseError;
     }
   }
 
@@ -236,12 +232,17 @@
         loadJSON('assets/data/vouchers.json').catch(()=>[]),
         window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null)
       ]);
-      let databaseBookings = null;
+      let bookingResult;
       try {
-        databaseBookings = await loadDatabaseBookingSlots();
-      } catch(dbError) {
-        console.warn('Could not load Supabase booking slots; using JSON/local fallback.', dbError);
+        bookingResult = await loadBookingSlots();
+      } catch(bookingError) {
+        console.warn(
+          '[Booking] Could not load booking slots from Supabase; starting with no remote bookings.',
+          bookingError
+        );
+        bookingResult = { source: 'none', data: [] };
       }
+
       const services = serviceResult.data || { categories: [] };
 
       state.config=Object.assign({}, config, {
@@ -252,7 +253,7 @@
       state.categories=services.categories || [];
       state.services=state.categories.flatMap(c => (c.services||[]).filter(s=>s.active).map(s=>({...s,category:c})));
 
-      // Supabase is preferred. If unavailable, services.json is used.
+      // Supabase is the source of truth for services.
       // A missing/invalid service duration defaults to 30 minutes.
       console.info('[Booking] Service source:', serviceResult.source, '-', state.services.length, 'services');
 
@@ -290,8 +291,16 @@
       }
 
       state.selected=state.selected.filter(sku=>state.services.some(s=>s.sku===sku && duration(s)!=null));
-      state.bookings=(databaseBookings !== null ? databaseBookings : []);
+      state.bookings=bookingResult.data || [];
       state.schedule=schedule || {monthlySchedule:{}};
+
+      console.info(
+        '[Booking] Booking availability source:',
+        bookingResult.source,
+        '-',
+        state.bookings.length,
+        'bookings'
+      );
       const saved=localStorage.getItem('salonBookingDraft');
       if(saved){ try { const d=JSON.parse(saved); state.selected=d.selected||[]; state.date=d.date||null; state.start=d.start||null; } catch(e){} }
 

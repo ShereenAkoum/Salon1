@@ -4,7 +4,7 @@ The website reads display currency and currency labels from
 `public.application_settings`.
 
 The local fallback file is:
-`assets/data/applicationsetting.json`
+Supabase `application_settings`
 
 Expected values:
 
@@ -19,4 +19,4 @@ Currency labels are language-aware:
 The public service catalogue is read from Supabase:
 `service_categories` + `services`.
 
-`services.json` is retained as the service-catalogue fallback. Currency defaults and labels are owned by `assets/data/applicationsetting.json` and Supabase `application_settings`; `services.json` does not contain application-level currency settings.
+The service catalogue is owned by Supabase `service_categories` and `services`. Currency defaults and labels are owned by Supabase `application_settings`.

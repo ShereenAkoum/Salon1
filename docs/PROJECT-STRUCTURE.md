@@ -24,5 +24,5 @@ The static HTML pages remain at the project root so existing routes and Cloudfla
 - RLS fix: `supabase/sql/application-settings-rls.sql`
 
 ## Runtime fallback data
-- `assets/data/applicationsetting.json` — local fallback for public application settings.
-- Service catalogue prefers Supabase and falls back to `assets/data/services.json`. Application-level currency/language settings live in `assets/data/applicationsetting.json` and Supabase.
+- Application settings are stored in Supabase `application_settings`.
+- Service catalogue is stored in Supabase `service_categories` and `services`; application-level currency/language settings are stored in Supabase `application_settings`.

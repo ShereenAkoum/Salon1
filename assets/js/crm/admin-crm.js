@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { categories: [], services: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'schedule', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'schedule', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -32,6 +32,138 @@
     var role = await getCurrentRole();
     state.currentRole = role;
     return !!role;
+  }
+
+
+  async function loadCustomers() {
+    var result = await window.salonSupabase
+      .from('customers')
+      .select('id,name,phone,email,notes,created_at')
+      .order('id', {ascending:false});
+    if (result.error) throw result.error;
+    state.customers = result.data || [];
+    renderCustomers();
+  }
+
+  function renderCustomers() {
+    var tbody = $('customers-table-body');
+    if (!tbody) return;
+    var q = (($('customer-search') && $('customer-search').value) || '').trim().toLowerCase();
+    var rows = state.customers.filter(function(c) {
+      return !q ||
+        String(c.name||'').toLowerCase().includes(q) ||
+        String(c.phone||'').toLowerCase().includes(q) ||
+        String(c.email||'').toLowerCase().includes(q);
+    });
+
+    tbody.innerHTML = rows.map(function(c) {
+      return '<tr>' +
+        '<td><strong>'+escapeHtml(c.name||'—')+'</strong></td>' +
+        '<td>'+escapeHtml(c.phone||'—')+'</td>' +
+        '<td>'+escapeHtml(c.email||'—')+'</td>' +
+        '<td>'+escapeHtml(c.notes||'—')+'</td>' +
+        '<td><button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="viewCustomer('+Number(c.id)+')">View</button> ' +
+        '<button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="editCustomer('+Number(c.id)+')">Edit</button></td>' +
+        '</tr>';
+    }).join('') || '<tr><td colspan="5" class="crm-empty">No customers found.</td></tr>';
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[ch];
+    });
+  }
+
+  function startCustomerCreate() {
+    state.editingCustomerId = null;
+    $('customer-form').reset();
+    $('customer-form-title').textContent = 'Add customer';
+    $('customer-form-card').classList.remove('crm-hidden');
+    $('customer-name').focus();
+  }
+
+  function editCustomer(id) {
+    var c = state.customers.find(function(x){ return String(x.id) === String(id); });
+    if (!c) return;
+    state.editingCustomerId = c.id;
+    $('customer-name').value = c.name || '';
+    $('customer-phone').value = c.phone || '';
+    $('customer-email').value = c.email || '';
+    $('customer-notes').value = c.notes || '';
+    $('customer-form-title').textContent = 'Edit customer';
+    $('customer-form-card').classList.remove('crm-hidden');
+    $('customer-name').focus();
+  }
+
+  async function saveCustomer(e) {
+    e.preventDefault();
+    clearMessage();
+    var payload = {
+      name: $('customer-name').value.trim(),
+      phone: $('customer-phone').value.trim() || null,
+      email: $('customer-email').value.trim() || null,
+      notes: $('customer-notes').value.trim() || null
+    };
+    if (!payload.name) {
+      message('Please enter the customer name.','error');
+      return;
+    }
+
+    var result;
+    if (state.editingCustomerId) {
+      result = await window.salonSupabase.from('customers')
+        .update(payload).eq('id', state.editingCustomerId);
+    } else {
+      result = await window.salonSupabase.from('customers').insert(payload);
+    }
+    if (result.error) {
+      message(result.error.message,'error');
+      return;
+    }
+    message(state.editingCustomerId ? 'Customer updated.' : 'Customer added.','success');
+    state.editingCustomerId = null;
+    $('customer-form-card').classList.add('crm-hidden');
+    await loadCustomers();
+  }
+
+  function cancelCustomerEdit() {
+    state.editingCustomerId = null;
+    $('customer-form-card').classList.add('crm-hidden');
+  }
+
+  async function viewCustomer(id) {
+    var c = state.customers.find(function(x){ return String(x.id) === String(id); });
+    if (!c) return;
+    state.selectedCustomerId = c.id;
+    $('customer-detail-name').textContent = c.name || 'Customer';
+    $('customer-detail-contact').textContent = [c.phone, c.email].filter(Boolean).join(' • ') || 'No contact information';
+    $('customer-detail-notes').textContent = c.notes || 'No notes.';
+    $('customer-detail-card').classList.remove('crm-hidden');
+    var result = await window.salonSupabase
+      .from('bookings')
+      .select('id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_notes,booking_services(id,start_time,end_time,price,duration_minutes,services(name_en,sku))')
+      .eq('customer_id', c.id)
+      .order('booking_date', {ascending:false})
+      .order('start_time', {ascending:false});
+    if (result.error) {
+      message(result.error.message,'error');
+      return;
+    }
+    var bookings = result.data || [];
+    $('customer-booking-count').textContent = bookings.length;
+    var total = bookings.reduce(function(sum,b){ return sum + Number(b.total_price||0); },0);
+    $('customer-total-spent').textContent = total.toFixed(2);
+    $('customer-booking-history').innerHTML = bookings.map(function(b){
+      var services=(b.booking_services||[]).map(function(bs){
+        return bs.services && bs.services.name_en ? bs.services.name_en : 'Service';
+      }).join(', ');
+      return '<tr><td>'+escapeHtml(b.booking_date||'—')+'</td><td>'+escapeHtml((b.start_time||'')+' – '+(b.end_time||''))+'</td><td>'+escapeHtml(services||'—')+'</td><td>'+escapeHtml(b.status||'—')+'</td><td>'+Number(b.total_price||0).toFixed(2)+'</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="crm-empty">No bookings yet.</td></tr>';
+  }
+
+  function closeCustomerDetails() {
+    state.selectedCustomerId = null;
+    $('customer-detail-card').classList.add('crm-hidden');
   }
 
   function isCrmAdmin() {
@@ -478,25 +610,16 @@
         };
       });
     } catch (e) {
-      console.warn('Could not load Supabase bookings; using test fallback.', e);
+      console.warn('Could not load Supabase bookings; using browser-local cache only.', e);
       dbBookings = null;
     }
 
     /*
-     * Only use local/JSON data when the Supabase request actually failed.
-     * If Supabase succeeds and contains zero bookings, the CRM must show zero
-     * bookings rather than resurrecting old confirmed test data.
+     * Supabase is the source of truth for CRM bookings.
+     * Keep the browser-local booking cache only for existing local/test
+     * behavior; there is no JSON booking catalogue anymore.
      */
     var local = bookingStore();
-    if (dbBookings === null && !local.length) {
-      try {
-        var response = await fetch('assets/data/bookings.json', { cache: 'no-store' });
-        if (response.ok) {
-          var data = await response.json();
-          local = Array.isArray(data.bookings) ? data.bookings : [];
-        }
-      } catch (e) {}
-    }
 
     try {
       var vr = await fetch('assets/data/vouchers.json', { cache: 'no-store' });
@@ -874,6 +997,7 @@
     if(view==='settings') loadApplicationSettings().catch(function(e){message(e.message,'error');});
     if(view==='bookings') loadBookings().catch(function(e){message(e.message,'error');});
     if(view==='dashboard') updateDashboard();
+    if(view==='customers') loadCustomers().catch(function(e){message(e.message,'error');});
     $('crm-sidebar').classList.remove('open');
   }
 
@@ -974,7 +1098,7 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
+    $('login-form').addEventListener('submit',login);$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
     $('user-form').addEventListener('submit',inviteUser);$('user-cancel').addEventListener('click',function(){$('user-form-card').classList.add('crm-hidden');});
     $('user-edit-form').addEventListener('submit',saveUser);$('user-edit-cancel').addEventListener('click',function(){$('user-edit-card').classList.add('crm-hidden');state.editingUserId=null;});
     $('password-setup-form').addEventListener('submit',finishPasswordSetup);
@@ -1012,3 +1136,4 @@
     } catch(e){console.error(e);showLogin();}
   });
 })();
+window.viewCustomer=viewCustomer;window.editCustomer=editCustomer;window.startCustomerCreate=startCustomerCreate;

@@ -203,16 +203,6 @@
     };
   }
 
-  async function loadServicesFromJSON() {
-    var response = await fetch('assets/data/services.json', { cache: 'no-store' });
-
-    if (!response.ok) {
-      throw new Error('Could not load assets/data/services.json');
-    }
-
-    return normalizeJSONServices(await response.json());
-  }
-
   async function loadServicesFromSupabase() {
     if (!window.salonSupabase) {
       throw new Error('Supabase client is not available.');
@@ -265,17 +255,11 @@
         data: databaseData
       };
     } catch (databaseError) {
-      console.warn(
-        '[Services] Supabase unavailable; using assets/data/services.json fallback.',
+      console.error(
+        '[Services] Supabase service catalogue unavailable.',
         databaseError
       );
-
-      var fallbackData = await loadServicesFromJSON();
-
-      return {
-        source: 'json-fallback',
-        data: fallbackData
-      };
+      throw databaseError;
     }
   }
 

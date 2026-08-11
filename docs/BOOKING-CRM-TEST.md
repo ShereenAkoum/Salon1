@@ -3,7 +3,7 @@
 This first Booking CRM iteration is connected to the current test booking store used by the booking website:
 
 - `localStorage.salonTestBookings` is the live test source.
-- `assets/data/bookings.json` is used as a fallback when the local test store is empty.
+- CRM bookings are read from Supabase. A browser-local cache may be used for existing local/test bookings when Supabase cannot be read.
 - The CRM resolves service names from the Supabase `services` data and voucher names from `assets/data/vouchers.json`.
 - Status changes made in the CRM are written back to `localStorage.salonTestBookings`, so cancelled bookings will stop blocking the booking-time selector on the same browser.
 
