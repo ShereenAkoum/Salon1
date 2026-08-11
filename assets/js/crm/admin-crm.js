@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { categories: [], services: [], users: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'schedule', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { categories: [], services: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'schedule', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -36,6 +36,247 @@
 
   function isCrmAdmin() {
     return state.currentRole === 'admin';
+  }
+
+  function settingValue(key, fallback) {
+    var row = state.appSettings.find(function(x){ return x.setting_key === key && x.active !== false; });
+    if (!row) return fallback;
+    return row.setting_value;
+  }
+
+  function normalizeCurrencyOptions(value) {
+    var options = value;
+    if (typeof options === 'string') {
+      try { options = JSON.parse(options); } catch (e) { options = {}; }
+    }
+    if (!options || typeof options !== 'object' || Array.isArray(options)) options = {};
+    return options;
+  }
+
+  function currencyOptionRows() {
+    return Array.prototype.slice.call(document.querySelectorAll('[data-currency-row]'));
+  }
+
+  function renderCurrencyOptions(options) {
+    options = normalizeCurrencyOptions(options);
+    var container = $('currency-options-list');
+    if (!container) return;
+
+    var codes = Object.keys(options);
+    if (!codes.length) {
+      container.innerHTML = '<div class="crm-settings-empty">No currencies configured yet. Add one below.</div>';
+      return;
+    }
+
+    container.innerHTML = codes.map(function(code) {
+      var item = options[code] || {};
+      var safeCode = escapeHtml(String(code).toUpperCase());
+      return '<div class="crm-currency-row" data-currency-row data-code="'+safeCode+'">'+
+        '<div class="crm-currency-code">'+
+          '<span class="crm-currency-symbol">'+escapeHtml((item.en || item.ar || String(code).charAt(0)).toString().slice(0,2))+'</span>'+
+          '<div><strong>'+safeCode+'</strong><small>Currency code</small></div>'+
+        '</div>'+
+        '<div class="crm-field">'+
+          '<label>English label</label>'+
+          '<input type="text" data-currency-en value="'+escapeHtml(item.en || '')+'" placeholder="$ or USD">'+
+        '</div>'+
+        '<div class="crm-field">'+
+          '<label>Arabic label</label>'+
+          '<input type="text" data-currency-ar value="'+escapeHtml(item.ar || '')+'" placeholder="ريال or $">'+
+        '</div>'+
+        '<button type="button" class="crm-icon-btn crm-remove-currency" title="Remove '+safeCode+'" aria-label="Remove '+safeCode+'">×</button>'+
+      '</div>';
+    }).join('');
+
+    bindCurrencyRowEvents();
+  }
+
+  function bindCurrencyRowEvents() {
+    currencyOptionRows().forEach(function(row) {
+      var remove = row.querySelector('.crm-remove-currency');
+      if (remove) {
+        remove.addEventListener('click', function() {
+          var rows = currencyOptionRows();
+          if (rows.length <= 1) {
+            message('Keep at least one currency configured.','error');
+            return;
+          }
+          row.remove();
+        });
+      }
+    });
+  }
+
+  function addCurrencyOption() {
+    var container = $('currency-options-list');
+    if (!container) return;
+    if (container.querySelector('.crm-settings-empty')) container.innerHTML = '';
+
+    var existingCodes = currencyOptionRows().map(function(row) {
+      return row.getAttribute('data-code') || '';
+    });
+    var code = 'NEW';
+    var n = 1;
+    while (existingCodes.indexOf(code) !== -1) {
+      code = 'NEW' + n++;
+    }
+
+    var row = document.createElement('div');
+    row.className = 'crm-currency-row';
+    row.setAttribute('data-currency-row', '');
+    row.setAttribute('data-code', code);
+    row.innerHTML =
+      '<div class="crm-currency-code crm-currency-code-edit">'+
+        '<input type="text" data-currency-code value="'+code+'" maxlength="5" aria-label="Currency code" placeholder="USD">'+
+        '<small>3-letter code</small>'+
+      '</div>'+
+      '<div class="crm-field">'+
+        '<label>English label</label>'+
+        '<input type="text" data-currency-en placeholder="$ or USD">'+
+      '</div>'+
+      '<div class="crm-field">'+
+        '<label>Arabic label</label>'+
+        '<input type="text" data-currency-ar placeholder="ريال or $">'+
+      '</div>'+
+      '<button type="button" class="crm-icon-btn crm-remove-currency" title="Remove currency" aria-label="Remove currency">×</button>';
+
+    container.appendChild(row);
+    bindCurrencyRowEvents();
+    var codeInput = row.querySelector('[data-currency-code]');
+    if (codeInput) {
+      codeInput.focus();
+      codeInput.select();
+      codeInput.addEventListener('input', function() {
+        row.setAttribute('data-code', codeInput.value.trim().toUpperCase());
+      });
+    }
+  }
+
+  function collectCurrencyOptions() {
+    var options = {};
+    var rows = currencyOptionRows();
+
+    rows.forEach(function(row) {
+      var codeInput = row.querySelector('[data-currency-code]');
+      var code = codeInput
+        ? codeInput.value.trim().toUpperCase()
+        : String(row.getAttribute('data-code') || '').trim().toUpperCase();
+      var en = row.querySelector('[data-currency-en]').value.trim();
+      var ar = row.querySelector('[data-currency-ar]').value.trim();
+
+      if (!code) throw new Error('Every currency needs a currency code.');
+      if (!/^[A-Z]{3,5}$/.test(code)) throw new Error('Currency code "'+code+'" must use 3–5 letters.');
+      if (!en || !ar) throw new Error('Please enter both English and Arabic labels for '+code+'.');
+      if (options[code]) throw new Error('Currency '+code+' is listed more than once.');
+
+      options[code] = {en: en, ar: ar};
+    });
+
+    return options;
+  }
+
+  async function loadApplicationSettings() {
+    var result = await window.salonSupabase
+      .from('application_settings')
+      .select('id,setting_key,setting_value,description,active,created_at,updated_at')
+      .order('setting_key', {ascending:true});
+    if (result.error) throw result.error;
+    state.appSettings = result.data || [];
+    renderApplicationSettings();
+  }
+
+  function renderApplicationSettings() {
+    var currency = settingValue('display_currency', 'USD');
+    var options = normalizeCurrencyOptions(settingValue('currency_options', {
+      USD: {en:'$', ar:'$'},
+      QAR: {en:'QAR', ar:'ريال'}
+    }));
+    var language = settingValue('default_language', 'en');
+
+    var currencySelect = $('app-setting-currency');
+    var languageSelect = $('app-setting-language');
+    if (currencySelect) {
+      var codes = Object.keys(options);
+      currencySelect.innerHTML = codes.map(function(code) {
+        var item = options[code] || {};
+        return '<option value="'+escapeHtml(code)+'">'+escapeHtml(code)+' — '+escapeHtml(item.en || item.ar || '')+'</option>';
+      }).join('');
+      currencySelect.value = String(currency || 'USD').toUpperCase();
+      if (!currencySelect.value && codes.length) currencySelect.value = codes[0];
+    }
+    if (languageSelect) languageSelect.value = String(language || 'en').toLowerCase();
+
+    renderCurrencyOptions(options);
+
+    var status = $('app-settings-status');
+    if (status) status.textContent = 'Synced with Supabase';
+  }
+
+  async function saveApplicationSettings(e) {
+    e.preventDefault();
+    clearMessage();
+    if (!isCrmAdmin()) {
+      message('Only administrators can manage application settings.','error');
+      return;
+    }
+
+    var currency = $('app-setting-currency').value.trim().toUpperCase();
+    var language = $('app-setting-language').value.trim().toLowerCase();
+    var options;
+
+    if (!currency || !language) {
+      message('Please complete the currency and language settings.','error');
+      return;
+    }
+    if (language !== 'en' && language !== 'ar') {
+      message('Default language must be English or Arabic.','error');
+      return;
+    }
+
+    try {
+      options = collectCurrencyOptions();
+    } catch (err) {
+      message(err.message,'error');
+      return;
+    }
+
+    if (!options[currency]) {
+      message('The display currency must be one of the configured currencies.','error');
+      return;
+    }
+
+    var settings = [
+      {key:'display_currency', value:currency, description:'Default website display currency.'},
+      {key:'currency_options', value:options, description:'Currency labels by currency and language.'},
+      {key:'default_language', value:language, description:'Default website language for new visitors.'}
+    ];
+
+    var button = $('save-application-settings');
+    if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+
+    try {
+      for (var i=0; i<settings.length; i++) {
+        var s = settings[i];
+        var result = await window.salonSupabase
+          .from('application_settings')
+          .upsert({
+            setting_key: s.key,
+            setting_value: s.value,
+            description: s.description,
+            active: true,
+            updated_at: new Date().toISOString()
+          }, {onConflict:'setting_key'});
+        if (result.error) {
+          message(result.error.message,'error');
+          return;
+        }
+      }
+
+      message('Application settings saved.','success');
+      await loadApplicationSettings();
+    } finally {
+      if (button) { button.disabled = false; button.textContent = 'Save Settings'; }
+    }
   }
 
   async function loadData() {
@@ -627,9 +868,10 @@
     document.querySelectorAll('.crm-view').forEach(function(el){el.classList.add('crm-hidden');});
     var target=$('view-'+view); if(target)target.classList.remove('crm-hidden');
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-view')===view);});
-    var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],bookings:['Appointments','Bookings'],customers:['Customers','Customers']};
+    var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],bookings:['Appointments','Bookings'],customers:['Customers','Customers'],settings:['Configuration','Application Settings']};
     var t=titles[view]||titles.dashboard;$('view-eyebrow').textContent=t[0];$('view-title').textContent=t[1];
     if(view==='users') loadUsers().catch(function(e){message(e.message,'error');});
+    if(view==='settings') loadApplicationSettings().catch(function(e){message(e.message,'error');});
     if(view==='bookings') loadBookings().catch(function(e){message(e.message,'error');});
     if(view==='dashboard') updateDashboard();
     $('crm-sidebar').classList.remove('open');
@@ -709,7 +951,7 @@
       history.replaceState({},document.title,window.location.pathname);
       $('crm-password-setup').classList.add('crm-hidden');
       if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();showLogin();message('Your invitation was accepted, but this account is not authorized for the salon CRM.','error');return;}
-      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();
+      state.currentUserId=result.data.user.id;showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
       message('Password created. Welcome to the salon CRM.','success');
     } finally {
       if(button){button.disabled=false;button.textContent='Create password →';}
@@ -722,7 +964,7 @@
     var result=await window.salonSupabase.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
     if(result.error){message(result.error.message,'error');return;}
     if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();message('This account is not authorized to access the salon CRM.','error');return;}
-    showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();
+    showApp();$('current-user-email').textContent=result.data.user.email||'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
   }
   function applyRoleVisibility(){
     document.querySelectorAll('[data-admin-only]').forEach(function(el){
@@ -732,7 +974,7 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);
+    $('login-form').addEventListener('submit',login);$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
     $('user-form').addEventListener('submit',inviteUser);$('user-cancel').addEventListener('click',function(){$('user-form-card').classList.add('crm-hidden');});
     $('user-edit-form').addEventListener('submit',saveUser);$('user-edit-cancel').addEventListener('click',function(){$('user-edit-card').classList.add('crm-hidden');state.editingUserId=null;});
     $('password-setup-form').addEventListener('submit',finishPasswordSetup);
@@ -765,7 +1007,7 @@
         state.currentUserId=session.user.id;showPasswordSetup();
       } else if(await requireAdmin()){
         state.currentUserId=session&&session.user?session.user.id:null;
-        showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadBookings();
+        showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
       } else showLogin();
     } catch(e){console.error(e);showLogin();}
   });

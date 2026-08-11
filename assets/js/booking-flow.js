@@ -141,6 +141,47 @@
     };
   }
 
+  function normalizeJSONServices(raw){
+    raw = raw || {};
+
+    return {
+      categories: (raw.categories || [])
+        .filter(category => category.active !== false)
+        .sort((a,b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+        .map(category => ({
+          sku: category.sku,
+          'name-en': category['name-en'] || '',
+          'name-ar': category['name-ar'] || '',
+          src: category.src || '',
+          width: category.width || 70,
+          height: category.height || 62,
+          sortOrder: category.sortOrder || 0,
+          active: category.active !== false,
+          services: (category.services || [])
+            .filter(service => service.active !== false)
+            .sort((a,b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+            .map(service => ({
+              sku: service.sku,
+              'name-en': service['name-en'] || '',
+              'name-ar': service['name-ar'] || '',
+              'description-en': service['description-en'] || '',
+              'description-ar': service['description-ar'] || '',
+              prices: service.prices || {},
+              // Keep the same 30-minute default used by Supabase data.
+              durationMinutes: Number(service.durationMinutes || 30),
+              active: service.active !== false,
+              sortOrder: service.sortOrder || 0
+            }))
+        }))
+    };
+  }
+
+  async function loadServicesFromJSON(){
+    return normalizeJSONServices(
+      await loadJSON('assets/data/services.json')
+    );
+  }
+
   async function loadServicesFromSupabase(){
     if(!window.salonSupabase){
       throw new Error('Supabase client is not available.');
@@ -168,10 +209,28 @@
     );
   }
 
+  async function loadSalonServices(){
+    try {
+      const services = await loadServicesFromSupabase();
+      console.info('[Booking] Loaded services from Supabase:', 
+        services.categories.reduce((total, category) => total + (category.services || []).length, 0)
+      );
+      return { source: 'supabase', data: services };
+    } catch (databaseError) {
+      console.warn(
+        '[Booking] Supabase service catalogue unavailable; using assets/data/services.json fallback.',
+        databaseError
+      );
+
+      const fallback = await loadServicesFromJSON();
+      return { source: 'json-fallback', data: fallback };
+    }
+  }
+
   async function init(){
     try{
-      const [services, config, schedule, vouchers, appSettings] = await Promise.all([
-        loadServicesFromSupabase(),
+      const [serviceResult, config, schedule, vouchers, appSettings] = await Promise.all([
+        loadSalonServices(),
         loadJSON('assets/data/booking-date-time.json'),
         loadJSON('assets/data/salon-schedule.json').catch(()=>({monthlySchedule:{}})),
         loadJSON('assets/data/vouchers.json').catch(()=>[]),
@@ -183,17 +242,19 @@
       } catch(dbError) {
         console.warn('Could not load Supabase booking slots; using JSON/local fallback.', dbError);
       }
+      const services = serviceResult.data || { categories: [] };
+
       state.config=Object.assign({}, config, {
         currencyOptions: (appSettings && appSettings.currency_options) || config.currencyOptions,
         displayCurrency: (appSettings && appSettings.display_currency) || 'USD'
       });
-      state.currency=(appSettings && appSettings.display_currency) || services.displayCurrency || 'USD';
+      state.currency=(appSettings && appSettings.display_currency) || 'USD';
       state.categories=services.categories || [];
       state.services=state.categories.flatMap(c => (c.services||[]).filter(s=>s.active).map(s=>({...s,category:c})));
 
-      // Service catalogue is now sourced from Supabase. No services.json fallback
-      // is used here, so missing duration_minutes remains visible as "—".
-      console.info('[Booking] Loaded services from Supabase:', state.services.length);
+      // Supabase is preferred. If unavailable, services.json is used.
+      // A missing/invalid service duration defaults to 30 minutes.
+      console.info('[Booking] Service source:', serviceResult.source, '-', state.services.length, 'services');
 
       // A voucher is represented as a normal booking item so the existing
       // date/time, availability, review, local-booking and Formspree logic

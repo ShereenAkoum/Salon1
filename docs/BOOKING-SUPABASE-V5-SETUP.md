@@ -6,7 +6,7 @@ This version moves bookings to Supabase as the shared source of truth.
 
 In Supabase SQL Editor, run:
 
-`CRM-SUPABASE-BOOKINGS.sql`
+`supabase/sql/CRM-SUPABASE-BOOKINGS.sql`
 
 This creates `public.bookings`, RLS, a public availability RPC, and a protected public booking-creation RPC.
 

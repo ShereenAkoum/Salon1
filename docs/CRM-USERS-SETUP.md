@@ -1,6 +1,6 @@
 # CRM Users setup
 
-1. Run `CRM-USERS-SETUP.sql` once in Supabase SQL Editor.
+1. Run `supabase/sql/CRM-USERS-SETUP.sql` once in Supabase SQL Editor.
 2. Find your own user in Supabase Authentication → Users and copy its User UID.
 3. Run:
    ```sql

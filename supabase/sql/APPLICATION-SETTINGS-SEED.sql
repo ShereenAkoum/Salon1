@@ -24,3 +24,30 @@ on public.application_settings
 for select
 to anon, authenticated
 using (active = true);
+
+
+drop policy if exists "admins_manage_application_settings"
+on public.application_settings;
+
+create policy "admins_manage_application_settings"
+on public.application_settings
+for all
+to authenticated
+using (
+  exists (
+    select 1
+    from public.admin_users au
+    where au.user_id = auth.uid()
+      and au.role = 'admin'
+      and au.active = true
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.admin_users au
+    where au.user_id = auth.uid()
+      and au.role = 'admin'
+      and au.active = true
+  )
+);

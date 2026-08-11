@@ -7,17 +7,6 @@
   "button-ar": "احجز الآن",
   "bookNow-en": "Book Now",
   "bookNow-ar": "احجز الآن",
-  "displayCurrency": "USD",
-  "currencyOptions": {
-    "USD": {
-      "en": "$",
-      "ar": "$"
-    },
-    "QAR": {
-      "en": "QAR",
-      "ar": "ريال"
-    }
-  },
   "categories": [
     {
       "sku": "HS",

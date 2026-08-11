@@ -1,0 +1,14 @@
+{
+  "displayCurrency": "USD",
+  "currencyOptions": {
+    "USD": {
+      "en": "$",
+      "ar": "$"
+    },
+    "QAR": {
+      "en": "QAR",
+      "ar": "ريال"
+    }
+  },
+  "defaultLanguage": "en"
+}

@@ -2,8 +2,7 @@
   var categoryData = null;
 
   /*
-   * Supabase is the primary source for the service catalogue.
-   * services.json is kept as an emergency fallback only.
+   * Supabase is the source of truth for the service catalogue.
    *
    * Supabase tables:
    *   service_categories
@@ -157,6 +156,63 @@
     };
   }
 
+  function normalizeJSONServices(raw) {
+    raw = raw || {};
+
+    return {
+      categories: (raw.categories || [])
+        .filter(function (category) {
+          return category.active !== false;
+        })
+        .sort(function (a, b) {
+          return Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+        })
+        .map(function (category) {
+          return {
+            sku: category.sku,
+            'name-en': category['name-en'] || '',
+            'name-ar': category['name-ar'] || '',
+            src: category.src || '',
+            width: category.width || 70,
+            height: category.height || 62,
+            sortOrder: category.sortOrder || 0,
+            active: category.active !== false,
+            services: (category.services || [])
+              .filter(function (service) {
+                return service.active !== false;
+              })
+              .sort(function (a, b) {
+                return Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+              })
+              .map(function (service) {
+                return {
+                  sku: service.sku,
+                  'name-en': service['name-en'] || '',
+                  'name-ar': service['name-ar'] || '',
+                  'description-en': service['description-en'] || '',
+                  'description-ar': service['description-ar'] || '',
+                  prices: service.prices || {},
+                  // Keep the same 30-minute default used by Supabase data.
+                  durationMinutes: Number(service.durationMinutes || 30),
+                  active: service.active !== false,
+                  sortOrder: service.sortOrder || 0
+                };
+              })
+          };
+        })
+    };
+  }
+
+  async function loadServicesFromJSON() {
+    var response = await fetch('assets/data/services.json', { cache: 'no-store' });
+
+    if (!response.ok) {
+      throw new Error('Could not load assets/data/services.json');
+    }
+
+    return normalizeJSONServices(await response.json());
+  }
+
   async function loadServicesFromSupabase() {
     if (!window.salonSupabase) {
       throw new Error('Supabase client is not available.');
@@ -188,22 +244,10 @@
     );
   }
 
-  async function loadServicesFromJsonFallback() {
-    var response = await fetch('assets/data/services.json', {
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      throw new Error('Could not load services.json fallback.');
-    }
-
-    return response.json();
-  }
-
   async function loadSalonServices() {
-    try {
-      console.info('[Services] Loading service catalogue from Supabase...');
+    console.info('[Services] Loading service catalogue from Supabase...');
 
+    try {
       var databaseData = await loadServicesFromSupabase();
 
       console.info(
@@ -220,30 +264,18 @@
         source: 'supabase',
         data: databaseData
       };
-
-    } catch (error) {
-      console.error(
-        '[Services] Supabase failed. Using services.json fallback.',
-        error
+    } catch (databaseError) {
+      console.warn(
+        '[Services] Supabase unavailable; using assets/data/services.json fallback.',
+        databaseError
       );
 
-      try {
-        var fallbackData = await loadServicesFromJsonFallback();
+      var fallbackData = await loadServicesFromJSON();
 
-        console.warn('[Services] Fallback catalogue loaded from services.json.');
-
-        return {
-          source: 'json',
-          data: fallbackData
-        };
-      } catch (fallbackError) {
-        console.error(
-          '[Services] Both Supabase and services.json failed.',
-          fallbackError
-        );
-
-        throw fallbackError;
-      }
+      return {
+        source: 'json-fallback',
+        data: fallbackData
+      };
     }
   }
 

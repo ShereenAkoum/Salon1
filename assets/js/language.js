@@ -11,7 +11,6 @@
     window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null),
     fetch('assets/data/index.json').then(function (r) { return r.json(); }),
     fetch('assets/data/nav.json').then(function (r) { return r.json(); }),
-    fetch('assets/data/services.json').then(function (r) { return r.json(); }),
     fetch('assets/data/faq.json').then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch('assets/data/booking-date-time.json').then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch('assets/data/booking-review.json').then(function (r) { return r.json(); }).catch(function () { return null; })
@@ -19,10 +18,9 @@
     var appSettings = results[0];
     var pageData = results[1];
     var navData = results[2];
-    var categoryServData = results[3];
-    var faqData = results[4];
-    var bookingDateTimeData = results[5];
-    var bookingReviewData = results[6];
+    var faqData = results[3];
+    var bookingDateTimeData = results[4];
+    var bookingReviewData = results[5];
 
     if (!localStorage.getItem('siteLang') && appSettings && appSettings.default_language) {
       currentLang = String(appSettings.default_language).toLowerCase();
@@ -96,49 +94,6 @@
         translations[fk][lang] = navData[lang][key];
       });
     });
-
-    // Process categoryServices: flatten category name-en/name-ar into
-    // "categoryServices.categories.<key>.name" translation entries
-    // where key = sku of first service (unique identifier)
-    if (categoryServData && categoryServData.categories) {
-      categoryServData.categories.forEach(function (cat) {
-        // Use the first service's sku as the key, fallback to slugified name
-        var key = (cat.services && cat.services[0] && cat.services[0].sku)
-          ? cat.services[0].sku
-          : (cat['name-en'] || '').toLowerCase().replace(/\s+/g, '_');
-
-        ['en', 'ar'].forEach(function (lang) {
-          var nameKey = 'categoryServices.categories.' + key + '.name';
-          if (!translations[nameKey]) translations[nameKey] = {};
-          translations[nameKey][lang] = cat['name-' + lang] || cat['name-en'];
-        });
-
-        // Also flatten individual service names within the category
-        if (cat.services) {
-          cat.services.forEach(function (service) {
-            if (!service.sku) return;
-            ['en', 'ar'].forEach(function (lang) {
-              var sKey = 'categoryServices.services.' + service.sku + '.name';
-              if (!translations[sKey]) translations[sKey] = {};
-              translations[sKey][lang] = service['name-' + lang] || service['name-en'] || cat['name-' + lang];
-            });
-          });
-        }
-      });
-
-      // Also expose top-level title/description/button from categoryServices
-      // (so data-i18n="categoryServices.title" etc. work)
-      ['title', 'description', 'button', 'bookNow'].forEach(function (field) {
-        ['en', 'ar'].forEach(function (lang) {
-          var val = categoryServData[field + '-' + lang];
-          if (val) {
-            var fk = 'categoryServices.' + field;
-            if (!translations[fk]) translations[fk] = {};
-            translations[fk][lang] = val;
-          }
-        });
-      });
-    }
 
     // Process faq-page.json
     if (faqData) {

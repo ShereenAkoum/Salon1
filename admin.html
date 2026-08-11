@@ -51,6 +51,7 @@
           <button class="crm-nav-item" data-view="vouchers"><span>◇</span> Vouchers</button>
           <button class="crm-nav-item" data-view="bookings"><span>◷</span> Bookings</button>
           <button class="crm-nav-item" data-view="customers"><span>♙</span> Customers</button>
+<button type="button" class="crm-nav-item" data-view="settings" data-admin-only><span class="crm-nav-icon">⚙</span><span>Settings</span></button>
           <button class="crm-nav-item" data-view="users"><span>♙</span> Users & Access</button>
         </nav>
         <div class="crm-side-bottom">
@@ -193,12 +194,77 @@
           </aside>
         </div>
 
-        <section id="view-customers" class="crm-view crm-hidden"><div class="crm-empty-state"><span>♙</span><div class="crm-section-label">Coming next</div><h2>Customers</h2><p>Customer profiles and booking history will appear here.</p></div></section>
+        
+<section id="view-settings" class="crm-view crm-hidden" data-admin-only>
+  <div class="crm-settings-shell">
+    <div class="crm-settings-intro">
+      <div>
+        <div class="crm-section-label">Configuration</div>
+        <h2>Application Settings</h2>
+        <p>Control the website defaults from one place. Changes are saved directly to Supabase.</p>
+      </div>
+      <div class="crm-settings-status" id="app-settings-status">Live configuration</div>
+    </div>
+
+    <form id="application-settings-form">
+      <div class="crm-settings-grid">
+        <div class="crm-card crm-settings-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Website defaults</div>
+              <h3>Language &amp; currency</h3>
+              <p>These are used for visitors who do not already have a saved preference.</p>
+            </div>
+          </div>
+
+          <div class="crm-form-grid">
+            <div class="crm-field">
+              <label for="app-setting-currency">Display currency</label>
+              <select id="app-setting-currency">
+                <option value="USD">USD — $</option>
+                <option value="QAR">QAR — ريال</option>
+              </select>
+              <small>Currency shown for service prices and booking totals.</small>
+            </div>
+            <div class="crm-field">
+              <label for="app-setting-language">Default language</label>
+              <select id="app-setting-language">
+                <option value="en">English</option>
+                <option value="ar">العربية</option>
+              </select>
+              <small>Used only when the visitor has no saved language preference.</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-card crm-settings-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Currency labels</div>
+              <h3>What visitors see</h3>
+              <p>Set the label used for each currency in English and Arabic. No JSON editing needed.</p>
+            </div>
+            <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="add-currency-option">+ Add currency</button>
+          </div>
+
+          <div id="currency-options-list" class="crm-currency-list"></div>
+          <div class="crm-settings-help">Tip: keep the currency code short, such as <strong>USD</strong> or <strong>QAR</strong>.</div>
+        </div>
+      </div>
+
+      <div class="crm-settings-actions">
+        <button type="submit" class="crm-btn crm-btn-primary" id="save-application-settings">Save Settings</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section id="view-customers" class="crm-view crm-hidden"><div class="crm-empty-state"><span>♙</span><div class="crm-section-label">Coming next</div><h2>Customers</h2><p>Customer profiles and booking history will appear here.</p></div></section>
       </div>
     </div>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/admin-crm.js"></script>
+  <script src="assets/js/crm/admin-crm.js"></script>
 </body>
 </html>
