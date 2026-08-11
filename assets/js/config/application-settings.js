@@ -1,6 +1,25 @@
 (function () {
   'use strict';
 
+  function parseValue(value) {
+    // Supabase returns JSONB values as native JavaScript values in normal
+    // cases, but keep this compatible with stringified JSON as well.
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      // A plain text setting is still a valid setting value.
+      return value;
+    }
+  }
+
   function normalizeSettings(raw) {
     raw = raw || {};
 

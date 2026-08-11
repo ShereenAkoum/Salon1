@@ -75,11 +75,29 @@
       var result = await window.salonSupabase
         .from('vouchers')
         .select('*')
-        .eq('active', true)
-        .order('created_at', { ascending: false });
+        .eq('active', true);
 
       if (result.error) throw result.error;
-      return result.data || [];
+
+      return (result.data || []).slice().sort(function(a,b) {
+        var ao = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : 0;
+        var bo = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : 0;
+        if (ao !== bo) return ao - bo;
+        var ad = a.created_at ? new Date(a.created_at).getTime() : 0;
+        var bd = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bd - ad;
+      });
+    },
+
+    getVoucherImageUrl(imagePath) {
+      if (!imagePath) return '';
+      if (/^https?:\/\//i.test(String(imagePath))) return String(imagePath);
+      if (/^assets\//i.test(String(imagePath))) return String(imagePath);
+      var result = window.salonSupabase
+        .storage
+        .from('vouchers')
+        .getPublicUrl(String(imagePath));
+      return result && result.data ? (result.data.publicUrl || '') : '';
     }
   };
 

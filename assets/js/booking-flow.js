@@ -52,6 +52,14 @@
   }
 
 
+  async function loadBookingSlots(){
+    const data = await loadDatabaseBookingSlots();
+    return {
+      source: 'supabase',
+      data: Array.isArray(data) ? data : []
+    };
+  }
+
   async function loadDatabaseBookingSlots(){
     if(!window.salonSupabase || !window.salonSupabase.rpc) return null;
 
@@ -223,13 +231,47 @@
     }
   }
 
+  async function loadVouchersFromSupabase(){
+    if(!window.salonSupabase){
+      console.warn('[Booking] Supabase voucher catalogue is not available.');
+      return [];
+    }
+
+    const result=await window.salonSupabase
+      .from('vouchers')
+      .select('*')
+      .eq('active', true)
+      .order('sort_order', {ascending:true})
+      .order('created_at', {ascending:false});
+
+    if(result.error) throw result.error;
+
+    return (result.data || []).map(v => ({
+      id:v.id,
+      sku:v.sku || ('V-'+String(v.id).padStart(3,'0')),
+      title:v.title_en || v.title || 'Voucher',
+      titleEn:v.title_en || v.title || 'Voucher',
+      titleAr:v.title_ar || v.title_en || v.title || 'Voucher',
+      image:v.image_path && window.salonDatabase && window.salonDatabase.getVoucherImageUrl
+        ? window.salonDatabase.getVoucherImageUrl(v.image_path)
+        : '',
+      durationMinutes:Number(v.duration_minutes || 30),
+      price:v.price_usd == null ? null : Number(v.price_usd),
+      priceQar:v.price_qar == null ? null : Number(v.price_qar),
+      active:v.active !== false
+    }));
+  }
+
   async function init(){
     try{
       const [serviceResult, config, schedule, vouchers, appSettings] = await Promise.all([
         loadSalonServices(),
         loadJSON('assets/data/booking-date-time.json'),
         loadJSON('assets/data/salon-schedule.json').catch(()=>({monthlySchedule:{}})),
-        loadJSON('assets/data/vouchers.json').catch(()=>[]),
+        loadVouchersFromSupabase().catch(e => {
+          console.warn('[Booking] Could not load vouchers from Supabase; using the selected voucher payload if available.', e);
+          return [];
+        }),
         window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null)
       ]);
       let bookingResult;
@@ -273,12 +315,16 @@
             pendingVoucher={
               id:source.id,
               sku:source.sku || ('V-'+String(source.id).padStart(3,'0')),
-              'name-en':source.title || 'Voucher',
-              'name-ar':source.title || 'Voucher',
+              'name-en':source.titleEn || source.title || 'Voucher',
+              'name-ar':source.titleAr || source.titleEn || source.title || 'Voucher',
               'description-en':'Voucher',
               'description-ar':'قسيمة',
-              prices:{USD: source.price == null ? null : Number(source.price), QAR: source.priceQar == null ? null : Number(source.priceQar)},
+              prices:{
+                USD: source.price == null ? null : Number(source.price),
+                QAR: source.priceQar == null ? null : Number(source.priceQar)
+              },
               durationMinutes:Number(source.durationMinutes || 30),
+              image:source.image || '',
               active:true,
               isVoucher:true,
               voucherId:source.id,

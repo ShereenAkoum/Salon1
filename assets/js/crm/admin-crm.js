@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -417,8 +417,26 @@
     if (cats.error) throw cats.error;
     var services = await window.salonSupabase.from('services').select('*').order('sort_order',{ascending:true});
     if (services.error) throw services.error;
-    state.categories=cats.data||[]; state.services=services.data||[];
-    renderCategories(); renderServices(); populateCategorySelect(); updateDashboard();
+    var vouchers = await window.salonSupabase.from('vouchers').select('*');
+    if (vouchers.error) throw vouchers.error;
+
+    state.categories=cats.data||[];
+    state.services=services.data||[];
+    state.vouchers=(vouchers.data||[]).slice().sort(function(a,b){
+      var ao = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : 0;
+      var bo = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : 0;
+      if (ao !== bo) return ao - bo;
+      var ad = a.created_at ? new Date(a.created_at).getTime() : 0;
+      var bd = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bd - ad;
+    });
+    state.bookingVouchers=state.vouchers.slice();
+
+    renderCategories();
+    renderServices();
+    renderVouchers();
+    populateCategorySelect();
+    updateDashboard();
   }
   async function loadUsers() {
     if (!isCrmAdmin()) {
@@ -450,6 +468,368 @@
       '<td><button class="crm-btn crm-btn-secondary" data-edit-service="'+s.id+'">Edit</button></td></tr>';
     }).join('');
   }
+  function voucherImageUrl(v) {
+    if (!v || !v.image_path) return '';
+    if (/^https?:\/\//i.test(String(v.image_path))) return String(v.image_path);
+    if (window.salonDatabase && typeof window.salonDatabase.getVoucherImageUrl === 'function') {
+      return window.salonDatabase.getVoucherImageUrl(v.image_path);
+    }
+    return '';
+  }
+
+  function renderVouchers() {
+    var tbody = $('voucher-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = state.vouchers.map(function(v) {
+      var image = voucherImageUrl(v);
+      var title = v.title_en || v.title || 'Voucher';
+      var arabic = v.title_ar || '';
+      var prices = [];
+      if (v.price_usd != null) prices.push('$' + v.price_usd);
+      if (v.price_qar != null) prices.push(v.price_qar + ' QAR');
+
+      return '<tr>' +
+        '<td><div class="crm-voucher-thumb">' +
+          (image ? '<img src="' + escapeHtml(image) + '" alt="' + escapeHtml(title) + '">' : '<span>◇</span>') +
+        '</div></td>' +
+        '<td><strong>' + escapeHtml(v.sku || '') + '</strong></td>' +
+        '<td><strong>' + escapeHtml(title) + '</strong>' +
+          (arabic ? '<br><span class="crm-small">' + escapeHtml(arabic) + '</span>' : '') +
+        '</td>' +
+        '<td>' + escapeHtml(prices.join(' · ') || '—') + '</td>' +
+        '<td>' + escapeHtml(v.duration_minutes || 30) + ' min</td>' +
+        '<td>' + (v.active !== false ? '<span class="crm-badge active">Active</span>' : '<span class="crm-badge inactive">Inactive</span>') + '</td>' +
+        '<td><div class="crm-actions-inline">' +
+          '<button type="button" class="crm-btn crm-btn-secondary crm-btn-small" data-edit-voucher="' + escapeHtml(v.id) + '">Edit</button>' +
+          '<button type="button" class="crm-btn crm-btn-danger crm-btn-small" data-delete-voucher="' + escapeHtml(v.id) + '">Delete</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="7" class="crm-empty">No vouchers found.</td></tr>';
+  }
+
+  function resetVoucherForm() {
+    state.editingVoucherId = null;
+    var form = $('voucher-form');
+    if (form) form.reset();
+    $('voucher-form-title').textContent = 'Add Voucher';
+    $('voucher-save').textContent = 'Add Voucher';
+    $('voucher-active').checked = true;
+    $('voucher-duration').value = 30;
+    $('voucher-current-image').innerHTML = '<div class="crm-image-empty">No image uploaded</div>';
+    $('voucher-image-file').value = '';
+    $('voucher-image-delete').classList.add('crm-hidden');
+  }
+
+  function editVoucher(id) {
+    var v = state.vouchers.find(function(x){ return String(x.id) === String(id); });
+    if (!v) return;
+
+    state.editingVoucherId = v.id;
+    $('voucher-form-title').textContent = 'Edit Voucher';
+    $('voucher-save').textContent = 'Save Changes';
+    $('voucher-sku').value = v.sku || '';
+    $('voucher-title-en').value = v.title_en || v.title || '';
+    $('voucher-title-ar').value = v.title_ar || '';
+    $('voucher-price-usd').value = v.price_usd == null ? '' : v.price_usd;
+    $('voucher-price-qar').value = v.price_qar == null ? '' : v.price_qar;
+    $('voucher-duration').value = v.duration_minutes || 30;
+    $('voucher-active').checked = v.active !== false;
+    $('voucher-image-file').value = '';
+
+    var image = voucherImageUrl(v);
+    $('voucher-current-image').innerHTML = image
+      ? '<img src="' + escapeHtml(image) + '" alt="' + escapeHtml(v.title_en || 'Voucher') + '"><span>Current image</span>'
+      : '<div class="crm-image-empty">No image uploaded</div>';
+    $('voucher-image-delete').classList.toggle('crm-hidden', !v.image_path);
+
+    $('voucher-form-card').classList.remove('crm-hidden');
+    $('voucher-title-en').focus();
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  function getVoucherFileExtension(file) {
+    var name = file && file.name ? file.name : '';
+    var match = name.toLowerCase().match(/\.([a-z0-9]+)$/);
+    var ext = match ? match[1] : 'jpg';
+    return ['jpg','jpeg','png','webp','gif','avif'].indexOf(ext) >= 0 ? ext : 'jpg';
+  }
+
+  async function uploadVoucherImage(voucherId, file) {
+    if (!file) return null;
+    if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(file.type || '')) {
+      throw new Error('Please choose a JPG, PNG, WebP, GIF or AVIF image.');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('Voucher images must be 5 MB or smaller.');
+    }
+
+    var ext = getVoucherFileExtension(file);
+    var token = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+    var path = String(voucherId) + '/' + token + '.' + ext;
+
+    var upload = await window.salonSupabase.storage
+      .from('vouchers')
+      .upload(path, file, {upsert:false, contentType:file.type || 'image/jpeg', cacheControl:'3600'});
+    if (upload.error) throw upload.error;
+
+    return path;
+  }
+
+  async function deleteVoucherStorageImage(imagePath) {
+    if (!imagePath || /^https?:\/\//i.test(String(imagePath)) || /^assets\//i.test(String(imagePath))) return;
+    var result = await window.salonSupabase.storage.from('vouchers').remove([String(imagePath)]);
+    if (result.error) throw result.error;
+  }
+
+  function previewVoucherImageFile() {
+    var file = $('voucher-image-file').files[0];
+    var preview = $('voucher-current-image');
+    if (!file) return;
+
+    if (!/^image\/(jpeg|png|webp|gif|avif)$/.test(file.type || '')) {
+      preview.innerHTML = '<div class="crm-image-empty">Unsupported image type</div>';
+      return;
+    }
+
+    var url = URL.createObjectURL(file);
+    preview.innerHTML = '<img src="' + escapeHtml(url) + '" alt="New voucher image"><span>New image</span>';
+  }
+
+  async function saveVoucher(e) {
+    e.preventDefault();
+    clearMessage();
+
+    var payload = {
+      sku: $('voucher-sku').value.trim(),
+      title_en: $('voucher-title-en').value.trim(),
+      title_ar: $('voucher-title-ar').value.trim() || null,
+      price_usd: $('voucher-price-usd').value === '' ? null : Number($('voucher-price-usd').value),
+      price_qar: $('voucher-price-qar').value === '' ? null : Number($('voucher-price-qar').value),
+      duration_minutes: Math.max(1, Number($('voucher-duration').value || 30)),
+      active: $('voucher-active').checked
+    };
+
+    if (!payload.sku || !payload.title_en) {
+      message('Please enter the voucher SKU and English title.', 'error');
+      return;
+    }
+
+    var file = $('voucher-image-file').files[0] || null;
+    var existing = state.editingVoucherId
+      ? state.vouchers.find(function(v){ return String(v.id) === String(state.editingVoucherId); })
+      : null;
+
+    var button = $('voucher-save');
+    button.disabled = true;
+    button.textContent = 'Saving…';
+
+    try {
+      var saved;
+
+      if (state.editingVoucherId) {
+        /*
+         * Do not rely on UPDATE ... SELECT returning the row.
+         * PostgREST can legally return an empty representation even when the
+         * UPDATE itself succeeded (especially with an older/legacy table and
+         * multiple RLS SELECT policies). We have already verified admin access
+         * separately, so perform the write first and then read the row back.
+         */
+        var updateResult = await window.salonSupabase
+          .from('vouchers')
+          .update(payload)
+          .eq('id', state.editingVoucherId);
+
+        if (updateResult.error) throw updateResult.error;
+
+        var fetchResult = await window.salonSupabase
+          .from('vouchers')
+          .select('*')
+          .eq('id', state.editingVoucherId)
+          .maybeSingle();
+
+        if (fetchResult.error) throw fetchResult.error;
+
+        if (!fetchResult.data) {
+          throw new Error(
+            'The voucher update was accepted, but the updated row could not be read back. Check that the voucher ID still exists and that the CRM SELECT policy allows this admin to read it.'
+          );
+        }
+
+        saved = fetchResult.data;
+      } else {
+        var insertResult = await window.salonSupabase
+          .from('vouchers')
+          .insert(payload);
+
+        if (insertResult.error) throw insertResult.error;
+
+        var fetchInserted = await window.salonSupabase
+          .from('vouchers')
+          .select('*')
+          .eq('sku', payload.sku)
+          .maybeSingle();
+
+        if (fetchInserted.error) throw fetchInserted.error;
+
+        if (!fetchInserted.data) {
+          throw new Error(
+            'The voucher was created, but the new row could not be read back. Check the CRM SELECT policy.'
+          );
+        }
+
+        saved = fetchInserted.data;
+      }
+      var oldImage = existing && existing.image_path ? existing.image_path : null;
+
+      if (file) {
+        // Storage upload and the database reference are two separate writes.
+        // PostgREST can return no error when an UPDATE matches zero rows, so
+        // request the updated row and verify that the image_path was actually
+        // written before reporting success.
+        var newPath = await uploadVoucherImage(saved.id, file);
+        var imageUpdate = await window.salonSupabase
+          .from('vouchers')
+          .update({image_path:newPath})
+          .eq('id', saved.id)
+          .select('id, image_path')
+          .maybeSingle();
+
+        if (imageUpdate.error) {
+          try { await deleteVoucherStorageImage(newPath); } catch (_) {}
+          throw imageUpdate.error;
+        }
+
+        if (!imageUpdate.data || imageUpdate.data.image_path !== newPath) {
+          try { await deleteVoucherStorageImage(newPath); } catch (_) {}
+          throw new Error(
+            'The image uploaded to Supabase Storage, but the voucher record could not be updated with the image path. Check the vouchers UPDATE RLS policy.'
+          );
+        }
+
+        if (oldImage && oldImage !== newPath) {
+          try {
+            await deleteVoucherStorageImage(oldImage);
+          } catch (cleanupError) {
+            console.warn('Could not delete previous voucher image:', cleanupError);
+          }
+        }
+
+        // Keep the local object consistent until loadVouchers() refreshes it.
+        saved.image_path = newPath;
+      }
+
+      state.editingVoucherId = null;
+      $('voucher-form-card').classList.add('crm-hidden');
+      await loadVouchers();
+      message('Voucher saved successfully.', 'success');
+    } catch (err) {
+      console.error('Could not save voucher:', err);
+      message(err.message || 'Could not save voucher.', 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = state.editingVoucherId ? 'Save Changes' : 'Add Voucher';
+    }
+  }
+
+  async function loadVouchers() {
+    var result = await window.salonSupabase
+      .from('vouchers')
+      .select('*');
+
+    if (result.error) throw result.error;
+
+    state.vouchers = (result.data || []).slice().sort(function(a,b){
+      var ao = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : 0;
+      var bo = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : 0;
+      if (ao !== bo) return ao - bo;
+      var ad = a.created_at ? new Date(a.created_at).getTime() : 0;
+      var bd = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bd - ad;
+    });
+    state.bookingVouchers = state.vouchers.slice();
+    renderVouchers();
+    updateDashboard();
+  }
+
+  async function deleteVoucherImage() {
+    if (!state.editingVoucherId) return;
+    var voucher = state.vouchers.find(function(v){ return String(v.id) === String(state.editingVoucherId); });
+    if (!voucher || !voucher.image_path) return;
+
+    if (!window.confirm('Remove this voucher image?')) return;
+
+    try {
+      var imagePath = voucher.image_path;
+
+      // Clear the database reference first. Only remove the storage object
+      // after the row has been updated successfully.
+      var result = await window.salonSupabase
+        .from('vouchers')
+        .update({image_path:null})
+        .eq('id', voucher.id)
+        .select('id, image_path')
+        .maybeSingle();
+
+      if (result.error) throw result.error;
+      if (!result.data || result.data.image_path !== null) {
+        throw new Error(
+          'The voucher image could not be removed from the database. Check the vouchers UPDATE RLS policy.'
+        );
+      }
+
+      try {
+        await deleteVoucherStorageImage(imagePath);
+      } catch (storageError) {
+        // The database is already correct; keep the warning visible in the
+        // console so an orphaned object can be cleaned up later if necessary.
+        console.warn('Voucher image record cleared, but storage cleanup failed:', storageError);
+      }
+
+      await loadVouchers();
+      editVoucher(voucher.id);
+      message('Voucher image removed.', 'success');
+    } catch (err) {
+      console.error('Could not remove voucher image:', err);
+      message(err.message || 'Could not remove voucher image.', 'error');
+    }
+  }
+
+  async function deleteVoucher(id) {
+    var voucher = state.vouchers.find(function(v){ return String(v.id) === String(id); });
+    if (!voucher) return;
+
+    var title = voucher.title_en || voucher.title || voucher.sku || 'this voucher';
+    if (!window.confirm('Delete "' + title + '"? This cannot be undone.')) return;
+
+    try {
+      if (voucher.image_path) {
+        try { await deleteVoucherStorageImage(voucher.image_path); }
+        catch (imageError) { console.warn('Could not delete voucher image:', imageError); }
+      }
+
+      var result = await window.salonSupabase
+        .from('vouchers')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (result.error) throw result.error;
+      if (!result.data) {
+        throw new Error('The voucher could not be deleted. Check the vouchers DELETE RLS policy.');
+      }
+
+      await loadVouchers();
+      $('voucher-form-card').classList.add('crm-hidden');
+      message('Voucher deleted.', 'success');
+    } catch (err) {
+      console.error('Could not delete voucher:', err);
+      message(err.message || 'Could not delete voucher.', 'error');
+    }
+  }
+
   function renderUsers() {
     $('users-table-body').innerHTML=state.users.map(function(u){
       var role=(u.role||'staff').replace(/^./,function(x){return x.toUpperCase();});
@@ -468,6 +848,7 @@
     var active=state.services.filter(function(s){return s.active!==false;}).length;
     $('stat-services').textContent=active;
     $('stat-categories').textContent=state.categories.filter(function(c){return c.active!==false;}).length+' categories';
+    $('stat-vouchers') && ($('stat-vouchers').textContent=state.vouchers.filter(function(v){return v.active!==false;}).length);
     $('stat-users') && ($('stat-users').textContent=state.users.length);
     $('stat-bookings') && ($('stat-bookings').textContent=state.bookings.length);
 
@@ -642,13 +1023,7 @@
      */
     var local = bookingStore();
 
-    try {
-      var vr = await fetch('assets/data/vouchers.json', { cache: 'no-store' });
-      if (vr.ok) {
-        var vd = await vr.json();
-        state.bookingVouchers = Array.isArray(vd) ? vd : [];
-      }
-    } catch (e) { state.bookingVouchers = []; }
+    state.bookingVouchers = state.vouchers.slice();
 
     var source = dbBookings !== null ? dbBookings : local;
     state.bookings = source.slice().sort(function(a,b) {
@@ -685,7 +1060,12 @@
     var found = state.services.find(function(s){ return String(s.sku || '') === String(item.serviceSku || ''); });
     if (found) return { name: found.name_en || found.name || item.serviceSku, duration: found.duration_minutes, price: found.price_usd };
     var voucher = state.bookingVouchers.find(function(v){ return String(v.sku || v.id || '') === String(item.serviceSku || ''); });
-    if (voucher) return { name: voucher.title || 'Voucher', duration: voucher.durationMinutes, price: voucher.price, voucher: true };
+    if (voucher) return {
+      name: voucher.title_en || voucher.title || 'Voucher',
+      duration: voucher.duration_minutes || voucher.durationMinutes || 30,
+      price: voucher.price_usd != null ? voucher.price_usd : voucher.price,
+      voucher: true
+    };
     return { name: item.serviceSku || 'Service', duration: null, price: null };
   }
 
@@ -1016,6 +1396,7 @@
     var t=titles[view]||titles.dashboard;$('view-eyebrow').textContent=t[0];$('view-title').textContent=t[1];
     if(view==='users') loadUsers().catch(function(e){message(e.message,'error');});
     if(view==='settings') loadApplicationSettings().catch(function(e){message(e.message,'error');});
+    if(view==='vouchers') loadVouchers().catch(function(e){message(e.message,'error');});
     if(view==='bookings') loadBookings().catch(function(e){message(e.message,'error');});
     if(view==='dashboard') updateDashboard();
     if(view==='customers') loadCustomers().catch(function(e){message(e.message,'error');});
@@ -1145,6 +1526,18 @@
 
     $('service-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-service]');if(b)editService(b.getAttribute('data-edit-service'));});
     $('category-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-category]');if(b)editCategory(b.getAttribute('data-edit-category'));}); $('users-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-user]');if(edit)editUser(edit.getAttribute('data-edit-user'));var toggle=e.target.closest('[data-toggle-user]');if(toggle)toggleUser(toggle.getAttribute('data-toggle-user'));});
+    $('voucher-form').addEventListener('submit',saveVoucher);
+    $('voucher-reset').addEventListener('click',resetVoucherForm);
+    $('voucher-cancel').addEventListener('click',function(){$('voucher-form-card').classList.add('crm-hidden');state.editingVoucherId=null;});
+    $('new-voucher-top').addEventListener('click',function(){resetVoucherForm();$('voucher-form-card').classList.remove('crm-hidden');$('voucher-sku').focus();window.scrollTo({top:0,behavior:'smooth'});});
+    $('vouchers-refresh').addEventListener('click',function(){loadVouchers().catch(function(e){message(e.message,'error');});});
+    $('voucher-image-delete').addEventListener('click',deleteVoucherImage);    $('voucher-image-file').addEventListener('change',previewVoucherImageFile);
+    $('voucher-table-body').addEventListener('click',function(e){
+      var edit=e.target.closest('[data-edit-voucher]');
+      if(edit) editVoucher(edit.getAttribute('data-edit-voucher'));
+      var del=e.target.closest('[data-delete-voucher]');
+      if(del) deleteVoucher(del.getAttribute('data-delete-voucher'));
+    });
     try{
       var sessionResult=await window.salonSupabase.auth.getSession();
       var session=sessionResult.data.session;

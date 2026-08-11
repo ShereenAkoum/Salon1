@@ -1,53 +1,60 @@
 (function () {
   const currentPage = window.location.pathname.split("/").pop() || 'index.html';
 
-  function loadVouchers() {
+  async function loadVouchers() {
     const container = document.getElementById('vouchers-grid');
     if (!container) return;
 
-    fetch('assets/data/vouchers.json')
-        .then(r => r.json())
-        .then(vouchers => {
+    try {
+        if (!window.salonDatabase || typeof window.salonDatabase.getVouchers !== 'function') {
+            throw new Error('Supabase voucher catalogue is not available.');
+        }
 
-            container.innerHTML = vouchers
-                .filter(v => v.active)
-                .map(v => {
-                    const payload = JSON.stringify({
-                        id: v.id,
-                        sku: v.sku || ('V-' + String(v.id).padStart(3, '0')),
-                        title: v.title,
-                        image: v.image,
-                        durationMinutes: Number(v.durationMinutes || 30),
-                        price: v.price == null || v.price === '' ? null : Number(v.price)
-                    }).replace(/"/g, '&quot;');
+        const rows = await window.salonDatabase.getVouchers();
 
-                    return `
-                    <a href="booking.html"
-                       class="voucher-card"
-                       data-voucher='${payload}'
-                       aria-label="Book ${String(v.title).replace(/"/g, '&quot;')}">
-                        <img src="${v.image}" alt="${v.title}">
-                    </a>`;
-                })
-                .join('');
+        container.innerHTML = rows.map(v => {
+            const titleEn = v.title_en || v.title || 'Voucher';
+            const titleAr = v.title_ar || titleEn;
+            const image = window.salonDatabase.getVoucherImageUrl(v.image_path || v.image || '');
+            const payload = JSON.stringify({
+                id: v.id,
+                sku: v.sku || ('V-' + String(v.id).padStart(3, '0')),
+                title: titleEn,
+                titleEn: titleEn,
+                titleAr: titleAr,
+                image: image,
+                durationMinutes: Number(v.duration_minutes || 30),
+                price: v.price_usd == null || v.price_usd === '' ? null : Number(v.price_usd),
+                priceQar: v.price_qar == null || v.price_qar === '' ? null : Number(v.price_qar),
+                active: v.active !== false
+            }).replace(/"/g, '&quot;');
 
-            container.querySelectorAll('[data-voucher]').forEach(card => {
-                card.addEventListener('click', function () {
-                    try {
-                        const voucher = JSON.parse(card.getAttribute('data-voucher'));
-                        // A voucher is a standalone booking item: selecting a
-                        // voucher replaces any previous service/voucher draft.
-                        localStorage.removeItem('salonBookingDraft');
-                        localStorage.removeItem('bookingServiceSku');
-                        localStorage.removeItem('service');
-                        localStorage.setItem('bookingVoucher', JSON.stringify(voucher));
-                    } catch (e) {
-                        console.error('Could not prepare voucher booking:', e);
-                    }
-                });
+            return `
+                <a href="booking.html"
+                   class="voucher-card"
+                   data-voucher='${payload}'
+                   aria-label="Book ${String(titleEn).replace(/"/g, '&quot;')}">
+                    ${image ? `<img src="${image}" alt="${String(titleEn).replace(/"/g, '&quot;')}">` : '<div class="voucher-card-placeholder">Voucher</div>'}
+                </a>`;
+        }).join('');
+
+        container.querySelectorAll('[data-voucher]').forEach(card => {
+            card.addEventListener('click', function () {
+                try {
+                    const voucher = JSON.parse(card.getAttribute('data-voucher'));
+                    localStorage.removeItem('salonBookingDraft');
+                    localStorage.removeItem('bookingServiceSku');
+                    localStorage.removeItem('service');
+                    localStorage.setItem('bookingVoucher', JSON.stringify(voucher));
+                } catch (e) {
+                    console.error('Could not prepare voucher booking:', e);
+                }
             });
-        })
-        .catch(err => console.error('Error loading vouchers:', err));
+        });
+    } catch (err) {
+        console.error('[Vouchers] Could not load vouchers from Supabase:', err);
+        container.innerHTML = '';
+    }
 }
 
   fetch("seo-head.html")

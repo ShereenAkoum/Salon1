@@ -139,7 +139,94 @@
           </div>
         </section>
 
-        <section id="view-vouchers" class="crm-view crm-hidden"><div class="crm-empty-state"><span>◇</span><div class="crm-section-label">Coming next</div><h2>Vouchers</h2><p>The dashboard is ready. We'll connect your voucher catalogue and customer offers next.</p></div></section>
+        <section id="view-vouchers" class="crm-view crm-hidden">
+  <div class="crm-page-heading">
+    <div>
+      <div class="crm-section-label">Marketing</div>
+      <h2>Vouchers</h2>
+      <p>Manage the offers shown on the website. Images are stored in Supabase Storage.</p>
+    </div>
+    <button id="new-voucher-top" class="crm-btn crm-btn-primary" type="button">+ Add voucher</button>
+  </div>
+
+  <div id="voucher-form-card" class="crm-card crm-hidden">
+    <div class="crm-section-label">Voucher catalogue</div>
+    <h2 id="voucher-form-title">Add Voucher</h2>
+    <p class="crm-small">Set the voucher details, prices, duration and website image.</p>
+
+    <form id="voucher-form" class="crm-standard-form">
+      <div class="crm-voucher-editor">
+        <div class="crm-form-grid">
+          <div class="crm-field">
+            <label for="voucher-sku">SKU</label>
+            <input id="voucher-sku" placeholder="V-001" required>
+          </div>
+          <div class="crm-field">
+            <label for="voucher-title-en">English title</label>
+            <input id="voucher-title-en" required>
+          </div>
+          <div class="crm-field">
+            <label for="voucher-title-ar">Arabic title</label>
+            <input id="voucher-title-ar" dir="rtl">
+          </div>
+          <div class="crm-field">
+            <label for="voucher-duration">Duration (minutes)</label>
+            <input id="voucher-duration" type="number" min="1" value="30">
+            <small>Defaults to 30 minutes.</small>
+          </div>
+          <div class="crm-field">
+            <label for="voucher-price-usd">USD price</label>
+            <input id="voucher-price-usd" type="number" min="0" step="0.01">
+          </div>
+          <div class="crm-field">
+            <label for="voucher-price-qar">QAR price</label>
+            <input id="voucher-price-qar" type="number" min="0" step="0.01">
+          </div>
+          <label class="crm-check">
+            <input id="voucher-active" type="checkbox" checked>
+            <span>Active on website</span>
+          </label>
+        </div>
+
+        <div class="crm-voucher-image-editor">
+          <div class="crm-field">
+            <label for="voucher-image-file">Voucher image</label>
+            <input id="voucher-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif">
+            <small>JPG, PNG, WebP, GIF or AVIF · max 5 MB.</small>
+          </div>
+          <div id="voucher-current-image" class="crm-voucher-image-preview">
+            <div class="crm-image-empty">No image uploaded</div>
+          </div>
+          <button id="voucher-image-delete" type="button" class="crm-btn crm-btn-danger crm-btn-small crm-hidden">Delete image</button>
+        </div>
+      </div>
+
+      <div class="crm-form-actions">
+        <button id="voucher-reset" type="button" class="crm-btn crm-btn-secondary">Clear</button>
+        <button id="voucher-cancel" type="button" class="crm-btn crm-btn-secondary">Cancel</button>
+        <button id="voucher-save" type="submit" class="crm-btn crm-btn-primary">Add Voucher</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="crm-card">
+    <div class="crm-toolbar">
+      <div>
+        <div class="crm-section-label">Website catalogue</div>
+        <h2>All vouchers</h2>
+      </div>
+      <button id="vouchers-refresh" type="button" class="crm-btn crm-btn-secondary crm-btn-small">↻ Refresh</button>
+    </div>
+    <div class="crm-table-wrap">
+      <table class="crm-table crm-vouchers-table">
+        <thead>
+          <tr><th>Image</th><th>SKU</th><th>Voucher</th><th>Prices</th><th>Duration</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody id="voucher-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
         <section id="view-bookings" class="crm-view crm-hidden">
           <div class="crm-page-heading">
             <div><div class="crm-section-label">Appointments</div><h2>Bookings</h2><p>Review customer requests, manage appointment status and see the full appointment details.</p></div>
@@ -331,6 +418,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js"></script>
+  <script src="assets/js/crm/admin-crm.js?v=vouchers-image-fix-2"></script>
 </body>
 </html>
