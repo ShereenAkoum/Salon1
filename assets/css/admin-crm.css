@@ -32,6 +32,70 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 .crm-field input,.crm-field textarea,.crm-field select{width:100%;border:1px solid #ded5ce;border-radius:11px;padding:11px 13px;background:#fff;color:var(--crm-ink);font:inherit;outline:none;transition:.18s}
 .crm-field input:focus,.crm-field textarea:focus,.crm-field select:focus{border-color:var(--crm-accent);box-shadow:0 0 0 3px rgba(164,111,90,.11)}
 .crm-field textarea{min-height:84px;resize:vertical}
+/* Customer forms use the same control treatment as Services and Categories. */
+.crm-standard-form .crm-form-grid{align-items:start}
+.crm-standard-form .crm-field{min-width:0}
+.crm-standard-form .crm-field label{display:block;line-height:1.2}
+.crm-standard-form .crm-field input,
+.crm-standard-form .crm-field textarea,
+.crm-standard-form .crm-field select{
+  box-sizing:border-box;
+  display:block;
+  width:100%;
+  min-height:44px;
+  border:1px solid #ded5ce;
+  border-radius:11px;
+  padding:11px 13px;
+  background:#fff;
+  color:var(--crm-ink);
+  font:inherit;
+  outline:none;
+  transition:.18s ease;
+}
+.crm-standard-form .crm-field textarea{min-height:96px;resize:vertical}
+.crm-standard-form .crm-field input:focus,
+.crm-standard-form .crm-field textarea:focus,
+.crm-standard-form .crm-field select:focus{
+  border-color:var(--crm-accent);
+  box-shadow:0 0 0 3px rgba(164,111,90,.11);
+}
+.crm-standard-form .crm-field.full{grid-column:1 / -1}
+.crm-standard-form .crm-field label + input,
+.crm-standard-form .crm-field label + textarea,
+.crm-standard-form .crm-field label + select{margin-top:8px}
+
+/* Shared form controls: categories and services use the exact same CRM input treatment. */
+.crm-standard-form .crm-form-grid{align-items:start}
+.crm-standard-form .crm-field{min-width:0}
+.crm-standard-form .crm-field label{display:block;line-height:1.2}
+.crm-standard-form .crm-field input,
+.crm-standard-form .crm-field textarea,
+.crm-standard-form .crm-field select{
+  box-sizing:border-box;
+  display:block;
+  width:100%;
+  min-height:44px;
+  border:1px solid #ded5ce;
+  border-radius:11px;
+  padding:11px 13px;
+  background:#fff;
+  color:var(--crm-ink);
+  font:inherit;
+  line-height:1.35;
+  outline:none;
+  appearance:auto;
+  -webkit-appearance:auto;
+}
+.crm-standard-form .crm-field textarea{min-height:96px;resize:vertical}
+.crm-standard-form .crm-field input[type="number"]{appearance:auto;-webkit-appearance:auto}
+.crm-standard-form .crm-field input:focus,
+.crm-standard-form .crm-field textarea:focus,
+.crm-standard-form .crm-field select:focus{border-color:var(--crm-accent);box-shadow:0 0 0 3px rgba(164,111,90,.11)}
+.crm-standard-form .crm-check{min-height:44px;box-sizing:border-box}
+@media(max-width:620px){
+  .crm-standard-form .crm-form-grid{grid-template-columns:1fr;gap:14px}
+}
+
 .crm-check{display:flex!important;flex-direction:row!important;align-items:center;gap:9px!important;margin-top:25px;padding:11px 13px;background:var(--crm-soft);border-radius:11px}
 .crm-check input{width:16px!important;height:16px;accent-color:var(--crm-accent)}
 .crm-form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:20px;padding-top:18px;border-top:1px solid var(--crm-line)}
@@ -93,6 +157,7 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 .crm-bookings-toolbar{display:flex;gap:12px;align-items:center;margin-bottom:15px}
 .crm-search-box{flex:1;display:flex;align-items:center;gap:9px;border:1px solid var(--crm-line);border-radius:12px;background:#fff;padding:0 12px}
 .crm-search-box span{font-size:20px;color:var(--crm-muted)}.crm-search-box input{border:0!important;box-shadow:none!important;padding:12px 4px!important;outline:0;width:100%;background:transparent}
+.crm-customers-toolbar .crm-btn{flex-shrink:0}
 .crm-booking-filter{border:1px solid var(--crm-line);background:#fff;border-radius:12px;padding:11px 12px;color:var(--crm-ink);font:inherit;min-width:135px}
 .crm-bookings-message{margin-bottom:10px}.crm-bookings-table{min-width:980px}
 .crm-booking-status-pending{background:#fff4dd;color:#9a6412}.crm-booking-status-completed{background:#eaf2ff;color:#365d93}.crm-booking-status-cancelled{background:#f9eaea;color:var(--crm-danger)}

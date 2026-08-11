@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'schedule', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
+  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], users: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingUserId: null, currentView: 'dashboard', currentRole: null, currentUserId: null };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -43,6 +43,7 @@
     if (result.error) throw result.error;
     state.customers = result.data || [];
     renderCustomers();
+    $('stat-customers') && ($('stat-customers').textContent=String(state.customers.length));
   }
 
   function renderCustomers() {
@@ -463,11 +464,31 @@
       '</div></td></tr>';
     }).join('') || '<tr><td colspan="6">No CRM users found.</td></tr>';
   }
-  function updateDashboard() {
+  async function updateDashboard() {
     var active=state.services.filter(function(s){return s.active!==false;}).length;
-    $('stat-services').textContent=active; $('stat-categories').textContent=state.categories.filter(function(c){return c.active!==false;}).length+' categories';
+    $('stat-services').textContent=active;
+    $('stat-categories').textContent=state.categories.filter(function(c){return c.active!==false;}).length+' categories';
     $('stat-users') && ($('stat-users').textContent=state.users.length);
     $('stat-bookings') && ($('stat-bookings').textContent=state.bookings.length);
+
+    // Customers are stored in Supabase, so the dashboard must get the
+    // current count from the database instead of relying on the customers
+    // page having been opened first.
+    var customerStat=$('stat-customers');
+    if(customerStat){
+      try{
+        var customerResult=await window.salonSupabase
+          .from('customers')
+          .select('id',{count:'exact',head:true});
+        if(customerResult.error) throw customerResult.error;
+        customerStat.textContent=String(customerResult.count||0);
+      }catch(e){
+        // If the count request fails, use already-loaded customer records
+        // when available rather than replacing the card with an error.
+        customerStat.textContent=String(state.customers.length||0);
+        console.warn('Could not load customer count for dashboard:',e);
+      }
+    }
   }
   function populateCategorySelect() {
     $('service-category').innerHTML=state.categories.map(function(c){return '<option value="'+c.id+'">'+escapeHtml(c.name_en)+'</option>';}).join('');
@@ -1134,6 +1155,11 @@
         showApp();$('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';applyRoleVisibility();await loadData();await loadUsers();await loadApplicationSettings();await loadBookings();
       } else showLogin();
     } catch(e){console.error(e);showLogin();}
+
+    // Customer actions are called from admin.html inline handlers, so expose them
+    // only after the customer functions have been created inside this scope.
+    window.viewCustomer = viewCustomer;
+    window.editCustomer = editCustomer;
+    window.startCustomerCreate = startCustomerCreate;
   });
 })();
-window.viewCustomer=viewCustomer;window.editCustomer=editCustomer;window.startCustomerCreate=startCustomerCreate;

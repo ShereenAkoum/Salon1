@@ -94,7 +94,7 @@
           <div class="crm-grid">
             <div class="crm-card">
               <div class="crm-section-label">Category</div><h2 id="category-form-title">Add Category</h2><p class="crm-small">Names, descriptions, image and display dimensions.</p>
-              <form id="category-form"><div class="crm-form-grid">
+              <form id="category-form" class="crm-standard-form"><div class="crm-form-grid">
                 <div class="crm-field"><label>English name</label><input id="category-name-en" required></div><div class="crm-field"><label>Arabic name</label><input id="category-name-ar" required dir="rtl"></div>
                 <div class="crm-field"><label>English description</label><textarea id="category-description-en"></textarea></div><div class="crm-field"><label>Arabic description</label><textarea id="category-description-ar" dir="rtl"></textarea></div>
                 <div class="crm-field full"><label>Image filename / path</label><input id="category-image" placeholder="hairStyles.png"></div>
@@ -104,7 +104,7 @@
             </div>
             <div class="crm-card">
               <div class="crm-section-label">Service</div><h2 id="service-form-title">Add Service</h2><p class="crm-small">Use real USD/QAR prices. Duration can stay empty.</p>
-              <form id="service-form"><div class="crm-form-grid">
+              <form id="service-form" class="crm-standard-form"><div class="crm-form-grid">
                 <div class="crm-field"><label>Category</label><select id="service-category" required></select></div><div class="crm-field"><label>SKU</label><input id="service-sku" placeholder="HS-001"></div>
                 <div class="crm-field"><label>English name</label><input id="service-name-en" required></div><div class="crm-field"><label>Arabic name</label><input id="service-name-ar" required dir="rtl"></div>
                 <div class="crm-field"><label>English description</label><textarea id="service-description-en"></textarea></div><div class="crm-field"><label>Arabic description</label><textarea id="service-description-ar" dir="rtl"></textarea></div>
@@ -157,12 +157,12 @@
               <div class="crm-search-box"><span>⌕</span><input id="booking-search" type="search" placeholder="Search customer, phone, email or booking reference"></div>
               <select id="booking-date-filter" class="crm-booking-filter"><option value="all">All dates</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="past">Past</option></select>
               <div class="crm-view-toggle" role="group" aria-label="Booking view">
-                <button type="button" class="is-active" data-booking-view="schedule">Schedule</button>
-                <button type="button" data-booking-view="list">List</button>
+                <button type="button" data-booking-view="schedule">Schedule</button>
+                <button type="button" class="is-active" data-booking-view="list">List</button>
               </div>
             </div>
             <div id="bookings-message" class="crm-small crm-bookings-message"></div>
-            <div id="booking-schedule" class="crm-booking-schedule">
+            <div id="booking-schedule" class="crm-booking-schedule crm-hidden">
               <div class="crm-schedule-toolbar">
                 <button id="schedule-prev" type="button" class="crm-btn crm-btn-secondary">←</button>
                 <button id="schedule-today" type="button" class="crm-btn crm-btn-secondary">Today</button>
@@ -267,8 +267,11 @@
       <h2>Customers</h2>
       <p class="crm-small">Manage customer details and see their booking history.</p>
     </div>
-    <div class="crm-toolbar-actions">
-      <input id="customer-search" class="crm-input" type="search" placeholder="Search name, phone or email">
+    <div class="crm-bookings-toolbar crm-customers-toolbar">
+      <div class="crm-search-box">
+        <span aria-hidden="true">⌕</span>
+        <input id="customer-search" type="search" placeholder="Search customer, phone or email" aria-label="Search customers">
+      </div>
       <button type="button" class="crm-btn crm-btn-primary" onclick="startCustomerCreate()">+ Add customer</button>
     </div>
   </div>
@@ -277,13 +280,13 @@
     <div class="crm-card-header">
       <h3 id="customer-form-title">Add customer</h3>
     </div>
-    <form id="customer-form">
+    <form id="customer-form" class="crm-standard-form">
       <div class="crm-form-grid">
-        <label><span>Name</span><input id="customer-name" required></label>
-        <label><span>Phone</span><input id="customer-phone" type="tel"></label>
-        <label><span>Email</span><input id="customer-email" type="email"></label>
+        <div class="crm-field"><label for="customer-name">Name</label><input id="customer-name" required autocomplete="name"></div>
+        <div class="crm-field"><label for="customer-phone">Phone</label><input id="customer-phone" type="tel" autocomplete="tel"></div>
+        <div class="crm-field"><label for="customer-email">Email</label><input id="customer-email" type="email" autocomplete="email"></div>
+        <div class="crm-field full"><label for="customer-notes">Notes</label><textarea id="customer-notes" rows="3"></textarea></div>
       </div>
-      <label><span>Notes</span><textarea id="customer-notes" rows="3"></textarea></label>
       <div class="crm-actions-inline">
         <button type="submit" class="crm-btn crm-btn-primary">Save customer</button>
         <button type="button" id="customer-cancel" class="crm-btn crm-btn-secondary">Cancel</button>
