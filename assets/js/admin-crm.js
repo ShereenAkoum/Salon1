@@ -106,7 +106,7 @@
     $('service-category').value=s.category_id||'';$('service-sku').value=s.sku||'';$('service-name-en').value=s.name_en||'';$('service-name-ar').value=s.name_ar||'';
     $('service-description-en').value=s.description_en||'';$('service-description-ar').value=s.description_ar||'';
     $('service-price-usd').value=s.price_usd==null?'':s.price_usd;$('service-price-qar').value=s.price_qar==null?'':s.price_qar;
-    $('service-duration').value=s.duration_minutes==null?'':s.duration_minutes;$('service-sort').value=s.sort_order||0;$('service-active').checked=s.active!==false;
+    $('service-duration').value=s.duration_minutes==null?30:s.duration_minutes;$('service-sort').value=s.sort_order||0;$('service-active').checked=s.active!==false;
     showView('services'); window.scrollTo({top:0,behavior:'smooth'});
   }
   async function saveService(e){
@@ -115,7 +115,7 @@
     var payload={category_id:Number($('service-category').value),sku:$('service-sku').value.trim()||null,name_en:$('service-name-en').value.trim(),name_ar:$('service-name-ar').value.trim(),
       description_en:$('service-description-en').value.trim()||null,description_ar:$('service-description-ar').value.trim()||null,price:usd===''?0:Number(usd),
       price_usd:usd===''?null:Number(usd),price_qar:$('service-price-qar').value===''?null:Number($('service-price-qar').value),
-      duration_minutes:$('service-duration').value===''?null:Number($('service-duration').value),sort_order:Number($('service-sort').value||0),active:$('service-active').checked};
+      duration_minutes:$('service-duration').value===''?30:Number($('service-duration').value),sort_order:Number($('service-sort').value||0),active:$('service-active').checked};
     if(!payload.name_en||!payload.name_ar||!payload.category_id){message('Please enter the English name, Arabic name and category.','error');return;}
     var result=state.editingServiceId?await window.salonSupabase.from('services').update(payload).eq('id',state.editingServiceId):await window.salonSupabase.from('services').insert(payload);
     if(result.error){message(result.error.message,'error');return;} message(state.editingServiceId?'Service updated.':'Service added.','success');resetServiceForm();await loadData();

@@ -11,7 +11,7 @@ The booking experience has been rebuilt from scratch and is now a single mobile-
 6. Receive a local test confirmation/reference.
 
 ## JSON data
-- `assets/data/services.json` - service catalogue and test durations.
+- Supabase `service_categories` + `services` - live service catalogue and durations. `assets/data/services.json` is not used by the booking flow for services.
 - `assets/data/booking-date-time.json` - booking slots and calendar labels.
 - `assets/data/salon-schedule.json` - opening/closed rules.
 - `assets/data/bookings.json` - confirmed/pending bookings used to disable slots.

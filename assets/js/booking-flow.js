@@ -35,7 +35,15 @@
     return null;
   }
 
-  function duration(service){ return Number(service.durationMinutes || 30); }
+  function duration(service){
+    const value = Number(service && service.durationMinutes);
+    return Number.isFinite(value) && value > 0 ? value : 30;
+  }
+
+  function durationLabel(service){
+    const value = duration(service);
+    return value == null ? '—' : `${value} ${t('min','دقيقة')}`;
+  }
 
   async function loadJSON(path){
     const r=await fetch(path,{cache:'no-store'});
@@ -94,13 +102,80 @@
     return result.data;
   }
 
+  function convertSupabaseServices(categories, services){
+    return {
+      displayCurrency: 'USD',
+      categories: (categories || []).map(category => ({
+        id: category.id,
+        'name-en': category.name_en,
+        'name-ar': category.name_ar,
+        src: category.image_url || '',
+        width: category.image_width || 70,
+        height: category.image_height || 62,
+        sortOrder: category.sort_order || 0,
+        active: category.active !== false,
+        services: (services || [])
+          .filter(service =>
+            service.category_id === category.id &&
+            service.active !== false
+          )
+          .map(service => ({
+            id: service.id,
+            sku: service.sku,
+            'name-en': service.name_en,
+            'name-ar': service.name_ar,
+            'description-en': service.description_en || '',
+            'description-ar': service.description_ar || '',
+            prices: {
+              USD: service.price_usd,
+              QAR: service.price_qar
+            },
+            durationMinutes: Number(service.duration_minutes || 30),
+            active: service.active !== false,
+            sortOrder: service.sort_order || 0
+          }))
+          .sort((a,b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+      }))
+      .filter(category => category.active)
+      .sort((a,b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    };
+  }
+
+  async function loadServicesFromSupabase(){
+    if(!window.salonSupabase){
+      throw new Error('Supabase client is not available.');
+    }
+
+    const categoryResult = await window.salonSupabase
+      .from('service_categories')
+      .select('*')
+      .eq('active', true)
+      .order('sort_order', {ascending:true});
+
+    if(categoryResult.error) throw categoryResult.error;
+
+    const serviceResult = await window.salonSupabase
+      .from('services')
+      .select('*')
+      .eq('active', true)
+      .order('sort_order', {ascending:true});
+
+    if(serviceResult.error) throw serviceResult.error;
+
+    return convertSupabaseServices(
+      categoryResult.data,
+      serviceResult.data
+    );
+  }
+
   async function init(){
     try{
-      const [services, config, schedule, vouchers] = await Promise.all([
-        loadJSON('assets/data/services.json'),
+      const [services, config, schedule, vouchers, appSettings] = await Promise.all([
+        loadServicesFromSupabase(),
         loadJSON('assets/data/booking-date-time.json'),
         loadJSON('assets/data/salon-schedule.json').catch(()=>({monthlySchedule:{}})),
-        loadJSON('assets/data/vouchers.json').catch(()=>[])
+        loadJSON('assets/data/vouchers.json').catch(()=>[]),
+        window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null)
       ]);
       let databaseBookings = null;
       try {
@@ -108,11 +183,17 @@
       } catch(dbError) {
         console.warn('Could not load Supabase booking slots; using JSON/local fallback.', dbError);
       }
-      const fallbackBookings = await loadJSON('assets/data/bookings.json').catch(()=>({bookings:[]}));
-      state.config=config;
-      state.currency=services.displayCurrency || 'USD';
+      state.config=Object.assign({}, config, {
+        currencyOptions: (appSettings && appSettings.currency_options) || config.currencyOptions,
+        displayCurrency: (appSettings && appSettings.display_currency) || 'USD'
+      });
+      state.currency=(appSettings && appSettings.display_currency) || services.displayCurrency || 'USD';
       state.categories=services.categories || [];
       state.services=state.categories.flatMap(c => (c.services||[]).filter(s=>s.active).map(s=>({...s,category:c})));
+
+      // Service catalogue is now sourced from Supabase. No services.json fallback
+      // is used here, so missing duration_minutes remains visible as "—".
+      console.info('[Booking] Loaded services from Supabase:', state.services.length);
 
       // A voucher is represented as a normal booking item so the existing
       // date/time, availability, review, local-booking and Formspree logic
@@ -147,8 +228,8 @@
         }
       }
 
-      state.selected=state.selected.filter(sku=>state.services.some(s=>s.sku===sku));
-      state.bookings=(databaseBookings !== null ? databaseBookings : (fallbackBookings.bookings || []));
+      state.selected=state.selected.filter(sku=>state.services.some(s=>s.sku===sku && duration(s)!=null));
+      state.bookings=(databaseBookings !== null ? databaseBookings : []);
       state.schedule=schedule || {monthlySchedule:{}};
       const saved=localStorage.getItem('salonBookingDraft');
       if(saved){ try { const d=JSON.parse(saved); state.selected=d.selected||[]; state.date=d.date||null; state.start=d.start||null; } catch(e){} }
@@ -198,7 +279,16 @@
   function getService(sku){ return state.services.find(s=>s.sku===sku); }
   function selectedServices(){ return state.selected.map(getService).filter(Boolean); }
   function total(){ return selectedServices().reduce((a,s)=>a+(price(s)||0),0); }
-  function totalMinutes(){ return selectedServices().reduce((a,s)=>a+duration(s),0); }
+  function totalMinutes(){
+    return selectedServices().reduce((a,s)=>{
+      const value=duration(s);
+      return a+(value == null ? 0 : value);
+    },0);
+  }
+
+  function hasValidSelectedDurations(){
+    return selectedServices().every(s=>duration(s) != null);
+  }
 
   function render(){
     renderServices();
@@ -223,7 +313,7 @@
       card.type='button';
       card.className='booking-service-card is-selected';
       card.setAttribute('aria-pressed','true');
-      card.innerHTML=`<span class="service-check">✓</span><span class="service-card-content"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${duration(s)} ${t('min','دقيقة')}</small></span><span class="service-price">${price(s)==null ? t('Voucher','قسيمة') : money(price(s))}</span>`;
+      card.innerHTML=`<span class="service-check">✓</span><span class="service-card-content"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${durationLabel(s)}</small></span><span class="service-price">${price(s)==null ? t('Voucher','قسيمة') : money(price(s))}</span>`;
       card.onclick=()=>{ state.selected=[s.sku]; state.date=null; state.start=null; saveDraft(); render(); showStep(2); };
       grid.appendChild(card);
       section.appendChild(grid);
@@ -239,9 +329,14 @@
       const grid=document.createElement('div'); grid.className='booking-service-grid';
       active.forEach(s=>{
         const selected=state.selected.includes(s.sku);
-        const card=document.createElement('button'); card.type='button'; card.className='booking-service-card '+(selected?'is-selected':'');
+        const hasDuration=duration(s) != null;
+        const card=document.createElement('button');
+        card.type='button';
+        card.className='booking-service-card '+(selected?'is-selected':'');
+        card.disabled=!hasDuration;
         card.setAttribute('aria-pressed',selected);
-        card.innerHTML=`<span class="service-check">${selected?'✓':'+'}</span><span class="service-card-content"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${duration(s)} ${t('min','دقيقة')}</small></span><span class="service-price">${money(price(s))}</span>`;
+        if(!hasDuration) card.setAttribute('title',t('Duration is not configured for this service.','مدة هذه الخدمة غير محددة.'));
+        card.innerHTML=`<span class="service-check">${selected?'✓':'+'}</span><span class="service-card-content"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${durationLabel(s)}</small></span><span class="service-price">${money(price(s))}</span>`;
         card.onclick=()=>toggleService(s.sku);
         grid.appendChild(card);
       });
@@ -251,6 +346,8 @@
 
   function toggleService(sku){
     if(state.voucher) return;
+    const service=getService(sku);
+    if(!service || duration(service)==null) return;
     if(state.selected.includes(sku)) state.selected=state.selected.filter(x=>x!==sku);
     else state.selected.push(sku);
     state.date=null; state.start=null; saveDraft(); render();
@@ -355,7 +452,7 @@
     // These buttons must NOT remain disabled from a static HTML attribute.
     const continueServices = $('continue-services');
     if (continueServices) {
-      continueServices.disabled = state.selected.length === 0;
+      continueServices.disabled = state.selected.length === 0 || !hasValidSelectedDurations();
       continueServices.setAttribute('aria-disabled', String(continueServices.disabled));
     }
 
@@ -382,7 +479,7 @@
 
     const rs=$('review-services'), rt=$('review-timeline'), reviewTotal=$('review-total');
     if(rs){
-      rs.innerHTML=selectedServices().map(s=>`<div class="review-service"><span>${esc(s['name-'+state.lang]||s['name-en'])}<small>${duration(s)} ${t('min','دقيقة')}</small></span><strong>${money(price(s))}</strong></div>`).join('');
+      rs.innerHTML=selectedServices().map(s=>`<div class="review-service"><span>${esc(s['name-'+state.lang]||s['name-en'])}<small>${durationLabel(s)}</small></span><strong>${money(price(s))}</strong></div>`).join('');
     }
     if(reviewTotal) reviewTotal.textContent=money(total());
 
@@ -392,7 +489,7 @@
         rt.innerHTML=selectedServices().map(s=>{
           const st=minutesToTime(cur),en=minutesToTime(cur+duration(s));
           cur+=duration(s);
-          return `<div class="timeline-item"><span class="timeline-time">${formatTime(st)}<br><small>${formatTime(en)}</small></span><span class="timeline-dot"></span><span class="timeline-service"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${duration(s)} ${t('min','دقيقة')}</small></span></div>`;
+          return `<div class="timeline-item"><span class="timeline-time">${formatTime(st)}<br><small>${formatTime(en)}</small></span><span class="timeline-dot"></span><span class="timeline-service"><strong>${esc(s['name-'+state.lang]||s['name-en'])}</strong><small>${durationLabel(s)}</small></span></div>`;
         }).join('');
       } else {
         rt.innerHTML=`<div class="booking-empty">${t('Select a date and time to see your appointment.','اختاري التاريخ والوقت لرؤية تفاصيل موعدك.')}</div>`;
@@ -776,7 +873,7 @@
   // Backward compatibility: services page can still call chooseService().
   window.chooseService=function(serviceName,displayName,categoryName,categoryDisplayName){
     const found=state.services.find(s=>s['name-en']===serviceName||s['name-ar']===displayName);
-    if(found){state.selected=[found.sku];state.date=null;state.start=null;saveDraft();}
+    if(found && duration(found)!=null){state.selected=[found.sku];state.date=null;state.start=null;saveDraft();}
     else { localStorage.setItem('service', serviceName); localStorage.removeItem('selectedDates'); }
     window.location.href='booking.html';
   };

@@ -8,6 +8,7 @@
 
   // ── Fetch both JSON files in parallel ────────────────────────────────
   Promise.all([
+    window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null),
     fetch('assets/data/index.json').then(function (r) { return r.json(); }),
     fetch('assets/data/nav.json').then(function (r) { return r.json(); }),
     fetch('assets/data/services.json').then(function (r) { return r.json(); }),
@@ -15,12 +16,18 @@
     fetch('assets/data/booking-date-time.json').then(function (r) { return r.json(); }).catch(function () { return null; }),
     fetch('assets/data/booking-review.json').then(function (r) { return r.json(); }).catch(function () { return null; })
   ]).then(function (results) {
-    var pageData = results[0];
-    var navData = results[1];
-    var categoryServData = results[2];
-    var faqData = results[3];
-    var bookingDateTimeData = results[4];
-    var bookingReviewData = results[5];
+    var appSettings = results[0];
+    var pageData = results[1];
+    var navData = results[2];
+    var categoryServData = results[3];
+    var faqData = results[4];
+    var bookingDateTimeData = results[5];
+    var bookingReviewData = results[6];
+
+    if (!localStorage.getItem('siteLang') && appSettings && appSettings.default_language) {
+      currentLang = String(appSettings.default_language).toLowerCase();
+      if (currentLang !== 'ar' && currentLang !== 'en') currentLang = 'en';
+    }
 
     // Flatten pageData into a dot-notation lookup map
     // e.g. { "mainSection.title": {en:"...", ar:"..."}, ... }

@@ -145,7 +145,7 @@
                   USD: service.price_usd,
                   QAR: service.price_qar
                 },
-                durationMinutes: service.duration_minutes,
+                durationMinutes: Number(service.duration_minutes || 30),
                 active: service.active !== false,
                 sortOrder: service.sort_order || 0
               };
@@ -345,7 +345,14 @@
 
   // ── Load data on DOM ready ─────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", function () {
-    loadSalonServices()
+    (window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null))
+      .then(function (settings) {
+        if (settings) {
+          SERVICE_PAGE_CONFIG.displayCurrency = settings.display_currency || SERVICE_PAGE_CONFIG.displayCurrency;
+          SERVICE_PAGE_CONFIG.currencyOptions = settings.currency_options || SERVICE_PAGE_CONFIG.currencyOptions;
+        }
+        return loadSalonServices();
+      })
       .then(function (result) {
         categoryData = result.data;
 
