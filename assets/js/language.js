@@ -93,6 +93,42 @@
         translations[fk][lang] = navData[lang][key];
       });
     });
+    // Application-level contact phone is managed in CRM and is used
+    // everywhere the public website displays the salon phone number.
+    if (appSettings && appSettings.contact_phone) {
+      var contactPhone = String(appSettings.contact_phone).trim();
+      translations['common.phone'] = { en: contactPhone, ar: contactPhone };
+    }
+
+    // Opening hours come from Booking Setup so the website and booking
+    // calendar always describe the same weekday/weekend schedule.
+    if (bookingConfiguration && bookingConfiguration.settings) {
+      var hoursSettings = bookingConfiguration.settings;
+      var weekdayOpening = String(hoursSettings.weekday_opening_time || hoursSettings.opening_time || '09:00').slice(0,5);
+      var weekdayClosing = String(hoursSettings.weekday_closing_time || hoursSettings.closing_time || '18:00').slice(0,5);
+      var weekendOpening = String(hoursSettings.weekend_opening_time || '10:00').slice(0,5);
+      var weekendClosing = String(hoursSettings.weekend_closing_time || '16:00').slice(0,5);
+
+      function formatOpeningHour(value, lang) {
+        var parts = String(value || '').split(':').map(Number);
+        var h = parts[0] || 0;
+        var m = parts[1] || 0;
+        var hour = h % 12 || 12;
+        var minute = m ? ':' + String(m).padStart(2, '0') : '';
+        if (lang === 'ar') return hour + minute + (h >= 12 ? ' م' : ' ص');
+        return hour + minute + (h >= 12 ? 'pm' : 'am');
+      }
+
+      translations['openingHours.days.hours-1'] = {
+        en: formatOpeningHour(weekdayOpening, 'en') + ' - ' + formatOpeningHour(weekdayClosing, 'en'),
+        ar: formatOpeningHour(weekdayOpening, 'ar') + ' - ' + formatOpeningHour(weekdayClosing, 'ar')
+      };
+      translations['openingHours.days.hours-2'] = {
+        en: formatOpeningHour(weekendOpening, 'en') + ' - ' + formatOpeningHour(weekendClosing, 'en'),
+        ar: formatOpeningHour(weekendOpening, 'ar') + ' - ' + formatOpeningHour(weekendClosing, 'ar')
+      };
+    }
+
     // Process booking settings from Supabase.
     if (bookingConfiguration && bookingConfiguration.settings) {
       var bookingSettings = bookingConfiguration.settings;

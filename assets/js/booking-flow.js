@@ -55,6 +55,12 @@
         slot_minutes: 30,
         opening_time: '09:00',
         closing_time: '18:00',
+        weekday_slot_minutes: 30,
+        weekday_opening_time: '09:00',
+        weekday_closing_time: '18:00',
+        weekend_slot_minutes: 30,
+        weekend_opening_time: '10:00',
+        weekend_closing_time: '16:00',
         advance_months: 3,
         messages: {
           en: { closed: 'Closed', booked: 'Booked', available: 'Available' },
@@ -75,13 +81,29 @@
     }
 
     const settings = result && result.settings ? result.settings : fallback.settings;
-    const slotMinutes = Number(settings.slot_minutes || 30);
-    const opening = String(settings.opening_time || '09:00').slice(0,5);
-    const closing = String(settings.closing_time || '18:00').slice(0,5);
 
-    const slots = [];
-    for(let cursor = toMin(opening); cursor < toMin(closing); cursor += slotMinutes){
-      slots.push(minutesToTime(cursor));
+    const weekday = {
+      slotMinutes: Number(settings.weekday_slot_minutes || settings.slot_minutes || 30),
+      opening: String(settings.weekday_opening_time || settings.opening_time || '09:00').slice(0,5),
+      closing: String(settings.weekday_closing_time || settings.closing_time || '18:00').slice(0,5)
+    };
+
+    const weekend = {
+      slotMinutes: Number(settings.weekend_slot_minutes || 30),
+      opening: String(settings.weekend_opening_time || '10:00').slice(0,5),
+      closing: String(settings.weekend_closing_time || '16:00').slice(0,5)
+    };
+
+    function buildSlots(schedule){
+      const slots = [];
+      const step = Math.max(1, Number(schedule.slotMinutes || 30));
+      const opening = toMin(schedule.opening);
+      const closing = toMin(schedule.closing);
+
+      for(let cursor = opening; cursor < closing; cursor += step){
+        slots.push(minutesToTime(cursor));
+      }
+      return slots;
     }
 
     return {
@@ -94,8 +116,21 @@
           en: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
           ar: ['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت']
         },
-        timeSlots: slots,
-        slotMinutes,
+        weekdaySchedule: {
+          slotMinutes: weekday.slotMinutes,
+          opening: weekday.opening,
+          closing: weekday.closing,
+          timeSlots: buildSlots(weekday)
+        },
+        weekendSchedule: {
+          slotMinutes: weekend.slotMinutes,
+          opening: weekend.opening,
+          closing: weekend.closing,
+          timeSlots: buildSlots(weekend)
+        },
+        // Legacy properties retained for any code that still reads them.
+        timeSlots: buildSlots(weekday),
+        slotMinutes: weekday.slotMinutes,
         advanceMonths: Number(settings.advance_months || 3),
         messages: settings.messages || {},
         dateTimeText: settings.date_time_text || {},
@@ -105,6 +140,25 @@
     };
   }
 
+  function getScheduleForDate(iso){
+    const fallback = {
+      slotMinutes: 30,
+      opening: '09:00',
+      closing: '18:00',
+      timeSlots: []
+    };
+    if(!iso || !state.config) return fallback;
+
+    // JavaScript: Sunday = 0, Saturday = 6.
+    const day = new Date(`${iso}T12:00:00`).getDay();
+    return (day === 0 || day === 6)
+      ? (state.config.weekendSchedule || fallback)
+      : (state.config.weekdaySchedule || fallback);
+  }
+
+  function getTimeSlotsForDate(iso){
+    return getScheduleForDate(iso).timeSlots || [];
+  }
 
   async function loadBookingSlots(){
     const data = await loadDatabaseBookingSlots();
@@ -593,30 +647,34 @@
   function toMin(x){const p=x.split(':').map(Number);return p[0]*60+p[1];}
 
   function validStart(iso,start){
+    const schedule=getScheduleForDate(iso);
     if(slotClosed(iso,start)) return false;
+
     const end=minutesToTime(toMin(start)+totalMinutes());
     if(isBooked(iso,start,end)) return false;
-    // Every requested service interval must remain inside the configured
-    // opening/closing window. A blackout is checked against the full interval
-    // above, so a multi-slot service cannot pass through a blocked period.
-    const slots=state.config.timeSlots||[];
-    const first=slots[0];
-    if(!first || toMin(start) < toMin(first)) return false;
-    const closing=minutesToTime(toMin(slots[slots.length-1]) + Number(state.config.slotMinutes || 30));
-    if(toMin(end) > toMin(closing)) return false;
+
+    // The selected service must fit completely inside that day's
+    // weekday/weekend opening window.
+    if(toMin(start) < toMin(schedule.opening)) return false;
+    if(toMin(end) > toMin(schedule.closing)) return false;
+
+    // A start time must belong to the configured interval for this day.
+    const slots=schedule.timeSlots || [];
+    if(slots.indexOf(start) === -1) return false;
+
     return true;
   }
 
   function hasAnyAvailability(iso){
     if(!state.selected.length) return true;
-    return (state.config.timeSlots||[]).some(s=>validStart(iso,s));
+    return getTimeSlotsForDate(iso).some(s=>validStart(iso,s));
   }
 
   function renderTimeSlots(){
     const wrap=$('booking-times'); if(!wrap || !state.config)return;
     wrap.innerHTML='';
     if(!state.date){wrap.innerHTML=`<div class="booking-empty">${t('Choose a date above to see available times.','اختاري التاريخ أعلاه لرؤية الأوقات المتاحة.')}</div>`;return;}
-    const slots=state.config.timeSlots||[];
+    const slots=getTimeSlotsForDate(state.date);
     const fragment=document.createDocumentFragment();
     slots.forEach(start=>{
       const end=minutesToTime(toMin(start)+totalMinutes());

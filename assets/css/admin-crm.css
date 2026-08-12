@@ -22,6 +22,9 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 .crm-btn-danger{background:#fff0f0;color:var(--crm-danger)}
 .crm-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .crm-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+/* Booking Setup: keep the settings and closures cards stacked for a comfortable editing width. */
+#view-booking-config > .crm-grid{grid-template-columns:1fr}
+
 .crm-card{background:rgba(255,255,255,.94);border:1px solid var(--crm-line);border-radius:20px;padding:24px;margin-bottom:20px;box-shadow:var(--crm-shadow)}
 .crm-grid>.crm-card{margin-bottom:0}
 .crm-card h2{font-size:19px;margin:0 0 5px;letter-spacing:-.25px}

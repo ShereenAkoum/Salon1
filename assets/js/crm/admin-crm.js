@@ -325,6 +325,7 @@
       QAR: {en:'QAR', ar:'ريال'}
     }));
     var language = settingValue('default_language', 'en');
+    var contactPhone = settingValue('contact_phone', '+1 234 567 890');
 
     var currencySelect = $('app-setting-currency');
     var languageSelect = $('app-setting-language');
@@ -338,6 +339,8 @@
       if (!currencySelect.value && codes.length) currencySelect.value = codes[0];
     }
     if (languageSelect) languageSelect.value = String(language || 'en').toLowerCase();
+    var phoneInput = $('app-setting-contact-phone');
+    if (phoneInput) phoneInput.value = String(contactPhone || '').trim();
 
     renderCurrencyOptions(options);
 
@@ -355,10 +358,11 @@
 
     var currency = $('app-setting-currency').value.trim().toUpperCase();
     var language = $('app-setting-language').value.trim().toLowerCase();
+    var contactPhone = $('app-setting-contact-phone').value.trim();
     var options;
 
-    if (!currency || !language) {
-      message('Please complete the currency and language settings.','error');
+    if (!currency || !language || !contactPhone) {
+      message('Please complete the currency, language and contact phone settings.','error');
       return;
     }
     if (language !== 'en' && language !== 'ar') {
@@ -381,7 +385,8 @@
     var settings = [
       {key:'display_currency', value:currency, description:'Default website display currency.'},
       {key:'currency_options', value:options, description:'Currency labels by currency and language.'},
-      {key:'default_language', value:language, description:'Default website language for new visitors.'}
+      {key:'default_language', value:language, description:'Default website language for new visitors.'},
+      {key:'contact_phone', value:contactPhone, description:'Public contact phone number used across the website.'}
     ];
 
     var button = $('save-application-settings');
@@ -1808,10 +1813,13 @@
     bookingConfigState.settings=cfg.settings||{};
     bookingConfigState.rules=cfg.schedule||[];
     var s=bookingConfigState.settings;
-    var slot=$('booking-slot-minutes'); if(slot) slot.value=s.slot_minutes??30;
+    var weekdaySlot=$('booking-weekday-slot-minutes'); if(weekdaySlot) weekdaySlot.value=s.weekday_slot_minutes ?? s.slot_minutes ?? 30;
+    var weekdayOpening=$('booking-weekday-opening-time'); if(weekdayOpening) weekdayOpening.value=String(s.weekday_opening_time||s.opening_time||'09:00').slice(0,5);
+    var weekdayClosing=$('booking-weekday-closing-time'); if(weekdayClosing) weekdayClosing.value=String(s.weekday_closing_time||s.closing_time||'18:00').slice(0,5);
+    var weekendSlot=$('booking-weekend-slot-minutes'); if(weekendSlot) weekendSlot.value=s.weekend_slot_minutes ?? 30;
+    var weekendOpening=$('booking-weekend-opening-time'); if(weekendOpening) weekendOpening.value=String(s.weekend_opening_time||'10:00').slice(0,5);
+    var weekendClosing=$('booking-weekend-closing-time'); if(weekendClosing) weekendClosing.value=String(s.weekend_closing_time||'16:00').slice(0,5);
     var advance=$('booking-advance-months'); if(advance) advance.value=s.advance_months??3;
-    var opening=$('booking-opening-time'); if(opening) opening.value=String(s.opening_time||'09:00').slice(0,5);
-    var closing=$('booking-closing-time'); if(closing) closing.value=String(s.closing_time||'18:00').slice(0,5);
     var messages=$('booking-messages-json'); if(messages) messages.value=JSON.stringify(s.messages||{},null,2);
     var dateText=$('booking-date-text-json'); if(dateText) dateText.value=JSON.stringify(s.date_time_text||{},null,2);
     var review=$('booking-review-text-json'); if(review) review.value=JSON.stringify(s.review_text||{},null,2);
@@ -1821,11 +1829,35 @@
   async function saveBookingSettings(e) {
     e.preventDefault();
     try {
+      var weekdaySlot=Number($('booking-weekday-slot-minutes').value);
+      var weekdayOpening=$('booking-weekday-opening-time').value;
+      var weekdayClosing=$('booking-weekday-closing-time').value;
+      var weekendSlot=Number($('booking-weekend-slot-minutes').value);
+      var weekendOpening=$('booking-weekend-opening-time').value;
+      var weekendClosing=$('booking-weekend-closing-time').value;
+
+      if(!weekdaySlot || !weekendSlot || !weekdayOpening || !weekdayClosing || !weekendOpening || !weekendClosing){
+        throw new Error('Please complete both weekday and weekend schedule settings.');
+      }
+      if(weekdayClosing <= weekdayOpening){
+        throw new Error('Weekday closing time must be after the weekday opening time.');
+      }
+      if(weekendClosing <= weekendOpening){
+        throw new Error('Weekend closing time must be after the weekend opening time.');
+      }
+
       await window.salonDatabase.updateBookingSettings({
-        slot_minutes:Number($('booking-slot-minutes').value),
-        advance_months:Number($('booking-advance-months').value),
-        opening_time:$('booking-opening-time').value,
-        closing_time:$('booking-closing-time').value
+        // Keep the legacy fields aligned with Monday-Friday for older integrations.
+        slot_minutes:weekdaySlot,
+        opening_time:weekdayOpening,
+        closing_time:weekdayClosing,
+        weekday_slot_minutes:weekdaySlot,
+        weekday_opening_time:weekdayOpening,
+        weekday_closing_time:weekdayClosing,
+        weekend_slot_minutes:weekendSlot,
+        weekend_opening_time:weekendOpening,
+        weekend_closing_time:weekendClosing,
+        advance_months:Number($('booking-advance-months').value)
       });
       await loadBookingConfig(); message('Booking settings saved.','success');
     } catch(err){ console.error(err); message(err.message||'Could not save booking settings.','error'); }

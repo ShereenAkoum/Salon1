@@ -38,10 +38,16 @@
       raw.defaultLanguage ||
       'en';
 
+    var contactPhone =
+      raw.contact_phone ||
+      raw.contactPhone ||
+      '+1 234 567 890';
+
     return {
       display_currency: String(displayCurrency).toUpperCase(),
       currency_options: currencyOptions,
-      default_language: String(defaultLanguage).toLowerCase()
+      default_language: String(defaultLanguage).toLowerCase(),
+      contact_phone: String(contactPhone).trim()
     };
   }
 

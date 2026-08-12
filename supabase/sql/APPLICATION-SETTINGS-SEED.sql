@@ -6,7 +6,8 @@ insert into public.application_settings (setting_key, setting_value, active)
 values
   ('display_currency', '"USD"'::jsonb, true),
   ('currency_options', '{"USD":{"en":"$","ar":"$"},"QAR":{"en":"QAR","ar":"ريال"}}'::jsonb, true),
-  ('default_language', '"en"'::jsonb, true)
+  ('default_language', '"en"'::jsonb, true),
+  ('contact_phone', '"+1 234 567 890"'::jsonb, true)
 on conflict (setting_key)
 do update set
   setting_value = excluded.setting_value,

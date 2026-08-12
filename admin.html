@@ -400,23 +400,46 @@
               <h2>Booking settings</h2>
               <form id="booking-settings-form" class="crm-standard-form">
                 <div class="crm-form-grid">
-                  <div class="crm-field">
-                    <label for="booking-slot-minutes">Slot duration</label>
-                    <input id="booking-slot-minutes" type="number" min="1" step="1" value="30">
-                    <small class="crm-small">Minutes used when generating available time slots.</small>
+                  <div class="crm-field" style="grid-column:1/-1;">
+                    <div class="crm-section-label">Monday – Friday</div>
+                    <p class="crm-small">Weekday booking hours and the interval used to generate start times.</p>
                   </div>
+                  <div class="crm-field">
+                    <label for="booking-weekday-slot-minutes">Slot interval</label>
+                    <input id="booking-weekday-slot-minutes" type="number" min="1" step="1" value="30">
+                    <small class="crm-small">Minutes between available start times.</small>
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-weekday-opening-time">Opening time</label>
+                    <input id="booking-weekday-opening-time" type="time" value="09:00">
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-weekday-closing-time">Closing time</label>
+                    <input id="booking-weekday-closing-time" type="time" value="18:00">
+                  </div>
+
+                  <div class="crm-field" style="grid-column:1/-1;margin-top:8px;">
+                    <div class="crm-section-label">Saturday – Sunday</div>
+                    <p class="crm-small">Weekend booking hours and the interval used to generate start times.</p>
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-weekend-slot-minutes">Slot interval</label>
+                    <input id="booking-weekend-slot-minutes" type="number" min="1" step="1" value="30">
+                    <small class="crm-small">Minutes between available start times.</small>
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-weekend-opening-time">Opening time</label>
+                    <input id="booking-weekend-opening-time" type="time" value="10:00">
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-weekend-closing-time">Closing time</label>
+                    <input id="booking-weekend-closing-time" type="time" value="16:00">
+                  </div>
+
                   <div class="crm-field">
                     <label for="booking-advance-months">Booking window</label>
                     <input id="booking-advance-months" type="number" min="1" step="1" value="3">
                     <small class="crm-small">How many months ahead customers can book.</small>
-                  </div>
-                  <div class="crm-field">
-                    <label for="booking-opening-time">Opening time</label>
-                    <input id="booking-opening-time" type="time" value="09:00">
-                  </div>
-                  <div class="crm-field">
-                    <label for="booking-closing-time">Closing time</label>
-                    <input id="booking-closing-time" type="time" value="18:00">
                   </div>
                 </div>
                 <div class="crm-form-actions">
@@ -532,6 +555,11 @@
               </select>
               <small>Used only when the visitor has no saved language preference.</small>
             </div>
+            <div class="crm-field">
+              <label for="app-setting-contact-phone">Contact phone number</label>
+              <input id="app-setting-contact-phone" type="tel" placeholder="+1 234 567 890" autocomplete="tel">
+              <small>Used for the website contact section and the navigation phone link.</small>
+            </div>
           </div>
         </div>
 
@@ -629,6 +657,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=booking-calendar-v3"></script>
+  <script src="assets/js/crm/admin-crm.js?v=weekly-hours-phone-1"></script>
 </body>
 </html>
