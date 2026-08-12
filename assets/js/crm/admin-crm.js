@@ -1097,48 +1097,92 @@
 
   async function loadBookings() {
     /*
-     * Supabase is the source of truth for public bookings.
+     * Supabase is the source of truth for CRM bookings.
      *
-     * The public booking RPC stores the appointment in the JSON `items`
-     * column. Keep the CRM on that same schema so pending requests created
-     * by booking-flow.js are visible here immediately.
+     * IMPORTANT: the live bookings table does NOT use the old JSON fields
+     * (date/items/total/customer). It uses booking_date, customer_id,
+     * total_price and booking_services. The old query ordered by `date`,
+     * which made Supabase return an error and silently sent the CRM to the
+     * local JSON fallback. That is why confirmed test bookings were shown
+     * while the real pending booking was missing.
      */
     var dbBookings = null;
     try {
       var result = await window.salonSupabase
         .from('bookings')
-        .select('id,booking_date,status,customer_name,customer_phone,customer_email,customer_notes,items,total,currency,created_at,updated_at')
-        .order('created_at',{ascending:false});
+        .select('id,public_reference,customer_id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_notes,created_at')
+        .order('id',{ascending:false});
       if (result.error) throw result.error;
 
-      dbBookings = (result.data || []).map(function(row){
-        var items = Array.isArray(row.items) ? row.items.map(function(item){
-          return {
-            serviceSku: item && item.serviceSku ? item.serviceSku : '',
-            start: String(item && item.start || '').slice(0,5),
-            end: String(item && item.end || '').slice(0,5),
-            price: item && item.price,
-            duration_minutes: item && item.duration_minutes,
-            serviceName: item && (item.serviceName || item.name || item.service_name) || ''
-          };
-        }) : [];
-        items.sort(function(a,b){ return a.start.localeCompare(b.start); });
+      var rows = result.data || [];
+      var customerIds = rows.map(function(r){ return r.customer_id; }).filter(function(id){ return id != null; });
+      var customersById = {};
+      if (customerIds.length) {
+        var cr = await window.salonSupabase
+          .from('customers')
+          .select('id,name,phone,email,notes')
+          .in('id', Array.from(new Set(customerIds)));
+        if (cr.error) throw cr.error;
+        (cr.data || []).forEach(function(c){ customersById[String(c.id)] = c; });
+      }
+
+      var bookingIds = rows.map(function(r){ return r.id; }).filter(function(id){ return id != null; });
+      var bookingServices = [];
+      if (bookingIds.length) {
+        var br = await window.salonSupabase
+          .from('booking_services')
+          .select('id,booking_id,service_id,start_time,end_time,price,duration_minutes')
+          .in('booking_id', Array.from(new Set(bookingIds)));
+        if (br.error) throw br.error;
+        bookingServices = br.data || [];
+      }
+
+      var serviceIds = bookingServices.map(function(r){ return r.service_id; }).filter(function(id){ return id != null; });
+      var servicesById = {};
+      if (serviceIds.length) {
+        var sr = await window.salonSupabase
+          .from('services')
+          .select('id,sku,name_en,name_ar,price_usd,price_qar')
+          .in('id', Array.from(new Set(serviceIds)));
+        if (sr.error) throw sr.error;
+        (sr.data || []).forEach(function(svc){ servicesById[String(svc.id)] = svc; });
+      }
+
+      var itemsByBooking = {};
+      bookingServices.forEach(function(item){
+        var key=String(item.booking_id);
+        if(!itemsByBooking[key]) itemsByBooking[key]=[];
+        var svc=servicesById[String(item.service_id)] || {};
+        itemsByBooking[key].push({
+          serviceSku: svc.sku || '',
+          start: String(item.start_time || '').slice(0,5),
+          end: String(item.end_time || '').slice(0,5),
+          price: item.price,
+          duration_minutes: item.duration_minutes,
+          serviceName: svc.name_en || ''
+        });
+      });
+      Object.keys(itemsByBooking).forEach(function(key){
+        itemsByBooking[key].sort(function(a,b){ return a.start.localeCompare(b.start); });
+      });
+
+      dbBookings = rows.map(function(row){
+        var customer = customersById[String(row.customer_id)] || {};
         return {
-          id: String(row.id),
+          id: row.public_reference || String(row.id),
           databaseId: row.id,
           date: row.booking_date,
           status: String(row.status || 'pending').toLowerCase(),
-          total: row.total,
-          currency: row.currency || 'USD',
+          total: row.total_price,
+          currency: 'USD',
           customer: {
-            name: row.customer_name || 'Customer',
-            phone: row.customer_phone || '',
-            email: row.customer_email || '',
-            notes: row.customer_notes || ''
+            name: customer.name || 'Customer',
+            phone: customer.phone || '',
+            email: customer.email || '',
+            notes: row.customer_notes || customer.notes || ''
           },
-          items: items,
-          created_at: row.created_at,
-          updated_at: row.updated_at
+          items: itemsByBooking[String(row.id)] || [],
+          created_at: row.created_at
         };
       });
     } catch (e) {
@@ -1146,11 +1190,18 @@
       dbBookings = null;
     }
 
+    /*
+     * Supabase is the source of truth for CRM bookings.
+     * Keep the browser-local booking cache only for existing local/test
+     * behavior; there is no JSON booking catalogue anymore.
+     */
     var local = bookingStore();
+
     state.bookingVouchers = state.vouchers.slice();
+
     var source = dbBookings !== null ? dbBookings : local;
     state.bookings = source.slice().sort(function(a,b) {
-      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+      return Number(b.databaseId || 0) - Number(a.databaseId || 0);
     });
     renderBookings();
     updateBookingDashboardStat();
@@ -1256,9 +1307,8 @@
   }
 
   function isBlockingStatus(b) {
-    // Only confirmed appointments reserve time on the public calendar.
-    // Pending requests are requests, not reservations.
-    return bookingStatus(b) === 'confirmed';
+    var s = bookingStatus(b);
+    return s === 'pending' || s === 'confirmed';
   }
 
   function overlaps(a,b) {
@@ -1441,38 +1491,6 @@
     if(result.error) throw result.error;
   }
 
-  function shiftBookingItems(items, newStart) {
-    var source = Array.isArray(items) ? items : [];
-    if (!source.length) return [];
-    var firstStart = parseTimeMinutes(source[0].start);
-    var targetStart = parseTimeMinutes(newStart);
-    if (firstStart == null || targetStart == null) throw new Error('Invalid appointment time.');
-
-    var delta = targetStart - firstStart;
-    function clock(total){
-      if(total < 0 || total >= 24*60) throw new Error('The appointment cannot extend past midnight.');
-      return pad2(Math.floor(total/60))+':'+pad2(total%60);
-    }
-    return source.map(function(item){
-      var start = parseTimeMinutes(item.start);
-      var end = parseTimeMinutes(item.end);
-      if (start == null || end == null || end <= start) throw new Error('Invalid appointment time.');
-      return Object.assign({}, item, {
-        start: clock(start + delta),
-        end: clock(end + delta)
-      });
-    });
-  }
-
-  async function updateBookingAppointmentInDatabase(id, date, items){
-    var result=await window.salonSupabase.from('bookings').update({
-      booking_date:date,
-      items:items,
-      updated_at:new Date().toISOString()
-    }).eq('id',id);
-    if(result.error) throw result.error;
-  }
-
   function findBooking(id) {
     return state.bookings.find(function(b){ return String(b.id) === String(id); });
   }
@@ -1496,85 +1514,12 @@
         '<div><span class="crm-detail-label">Email</span><strong>' + escapeHtml(c.email || '—') + '</strong></div>' +
         '<div><span class="crm-detail-label">Appointment</span><strong>' + escapeHtml(dateText) + '</strong><span>' + escapeHtml(bookingStart(b) || '—') + (bookingEnd(b) ? ' – ' + escapeHtml(bookingEnd(b)) : '') + '</span></div>' +
       '</div>' +
-      '<div class="crm-detail-section crm-booking-edit-section">' +
-        '<div class="crm-section-label">Adjust appointment</div>' +
-        '<div class="crm-form-grid">' +
-          '<div class="crm-field"><label for="crm-edit-booking-date">Date</label><input id="crm-edit-booking-date" type="date" value="' + escapeHtml(b.date || '') + '"></div>' +
-          '<div class="crm-field"><label for="crm-edit-booking-start">Start time</label><input id="crm-edit-booking-start" type="time" value="' + escapeHtml(bookingStart(b) || '') + '"></div>' +
-        '</div>' +
-        '<div class="crm-small crm-booking-edit-help">Changing the start time moves the entire appointment by the same amount and keeps each service duration. Pending requests do not block other customers.</div>' +
-        '<button type="button" class="crm-btn crm-btn-secondary" data-save-booking-appointment="' + escapeHtml(b.id) + '">Save date & time</button>' +
-        '<span id="crm-edit-booking-message" class="crm-small"></span>' +
-      '</div>' +
       '<div class="crm-detail-section"><div class="crm-section-label">Services</div>' + items + '</div>' +
       '<div class="crm-detail-total"><span>Total</span><strong>' + bookingMoney(b) + '</strong></div>' +
       (c.notes ? '<div class="crm-detail-section"><div class="crm-section-label">Customer notes</div><p class="crm-detail-notes">' + escapeHtml(c.notes) + '</p></div>' : '') +
       '<div class="crm-detail-actions">' + nextStatuses + '</div>';
     $('booking-detail-modal').classList.remove('crm-hidden');
     $('booking-detail-modal').setAttribute('aria-hidden','false');
-  }
-
-  async function saveBookingAppointment(id) {
-    var b = findBooking(id);
-    if (!b) return;
-    var dateInput = $('crm-edit-booking-date');
-    var startInput = $('crm-edit-booking-start');
-    var messageEl = $('crm-edit-booking-message');
-    if (!dateInput || !startInput) return;
-
-    var date = dateInput.value;
-    var start = startInput.value;
-    if (!date || !start) {
-      if (messageEl) messageEl.textContent = 'Please choose a date and start time.';
-      return;
-    }
-
-    var items;
-    try {
-      items = shiftBookingItems(b.items, start);
-    } catch (e) {
-      if (messageEl) messageEl.textContent = e.message || 'Invalid appointment time.';
-      return;
-    }
-
-    // Only confirmed appointments are hard reservations. A pending request
-    // may be moved freely; when the admin confirms it, the overlap check
-    // below is performed against other confirmed appointments.
-    if (bookingStatus(b) === 'confirmed') {
-      var candidate = Object.assign({}, b, {date:date, items:items});
-      var conflict = hasBlockingOverlap(candidate, id);
-      if (conflict) {
-        var cc = bookingCustomer(conflict);
-        if (messageEl) messageEl.textContent =
-          'This time overlaps confirmed booking ' + (cc.name || conflict.id) + '.';
-        return;
-      }
-    }
-
-    var button = document.querySelector('[data-save-booking-appointment="' + CSS.escape(String(id)) + '"]');
-    if (button) {
-      button.disabled = true;
-      button.dataset.originalText = button.textContent;
-      button.textContent = 'Saving…';
-    }
-
-    try {
-      await updateBookingAppointmentInDatabase(b.databaseId || id, date, items);
-      b.date = date;
-      b.items = items;
-      b.updated_at = new Date().toISOString();
-      persistBookings();
-      renderBookings();
-      renderBookingDetail(id);
-      message('Appointment date/time updated.', 'success');
-    } catch (e) {
-      console.error('Could not update booking appointment:', e);
-      if (messageEl) messageEl.textContent = 'Could not save the appointment: ' + (e.message || 'Unknown error');
-      if (button) {
-        button.disabled = false;
-        button.textContent = button.dataset.originalText || 'Save date & time';
-      }
-    }
   }
 
   function closeBookingDetail() {
@@ -1746,12 +1691,7 @@
     document.querySelectorAll('[data-booking-filter]').forEach(function(b){b.addEventListener('click',function(){state.bookingFilter=b.getAttribute('data-booking-filter');renderBookings();});});
     $('bookings-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-view-booking]');if(b)renderBookingDetail(b.getAttribute('data-view-booking'));});
     document.querySelectorAll('[data-close-booking]').forEach(function(el){el.addEventListener('click',closeBookingDetail);});
-    $('booking-detail-content').addEventListener('click',function(e){
-      var statusButton=e.target.closest('[data-booking-status]');
-      if(statusButton) updateBookingStatus(statusButton.getAttribute('data-booking-id'),statusButton.getAttribute('data-booking-status'));
-      var saveButton=e.target.closest('[data-save-booking-appointment]');
-      if(saveButton) saveBookingAppointment(saveButton.getAttribute('data-save-booking-appointment'));
-    });
+    $('booking-detail-content').addEventListener('click',function(e){var b=e.target.closest('[data-booking-status]');if(b)updateBookingStatus(b.getAttribute('data-booking-id'),b.getAttribute('data-booking-status'));});
     document.querySelectorAll('[data-booking-view]').forEach(function(b){b.addEventListener('click',function(){setBookingView(b.getAttribute('data-booking-view'));});});
     $('schedule-prev').addEventListener('click',function(){state.scheduleDate.setDate(state.scheduleDate.getDate()-7);renderSchedule();});
     $('schedule-next').addEventListener('click',function(){state.scheduleDate.setDate(state.scheduleDate.getDate()+7);renderSchedule();});
