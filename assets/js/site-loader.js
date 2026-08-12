@@ -1,6 +1,29 @@
 (function () {
   const currentPage = window.location.pathname.split("/").pop() || 'index.html';
 
+  // Booking selections are transient. Never leave service/voucher/date/time
+  // selections behind in localStorage when the visitor leaves the booking flow.
+  const BOOKING_LOCAL_KEYS = [
+    'salonBookingDraft',
+    'bookingServiceSku',
+    'bookingVoucher',
+    'service',
+    'selectedDates'
+  ];
+
+  function clearBookingStorage() {
+    BOOKING_LOCAL_KEYS.forEach(function (key) {
+      try { localStorage.removeItem(key); } catch (e) {}
+    });
+    try { sessionStorage.removeItem('bookingHandoff'); } catch (e) {}
+  }
+
+  // The booking page owns its state. Any other page is a clean entry point.
+  if (currentPage !== 'booking.html') {
+    clearBookingStorage();
+  }
+
+
   async function loadVouchers() {
     const container = document.getElementById('vouchers-grid');
     if (!container) return;
@@ -42,10 +65,12 @@
             card.addEventListener('click', function () {
                 try {
                     const voucher = JSON.parse(card.getAttribute('data-voucher'));
-                    localStorage.removeItem('salonBookingDraft');
-                    localStorage.removeItem('bookingServiceSku');
-                    localStorage.removeItem('service');
-                    localStorage.setItem('bookingVoucher', JSON.stringify(voucher));
+                    // Pass the voucher only for this navigation. It is not
+                    // persisted in localStorage.
+                    sessionStorage.setItem('bookingHandoff', JSON.stringify({
+                        type: 'voucher',
+                        voucher: voucher
+                    }));
                 } catch (e) {
                     console.error('Could not prepare voucher booking:', e);
                 }

@@ -82,8 +82,13 @@
 
   function openBookingForService(service) {
     try {
-      localStorage.setItem('service', service['name-en'] || '');
-      localStorage.setItem('bookingServiceSku', service.sku || '');
+      // Pass the selected service only for the immediate booking navigation.
+      // Do not persist booking choices in localStorage.
+      sessionStorage.setItem('bookingHandoff', JSON.stringify({
+        type: 'service',
+        serviceName: service['name-en'] || '',
+        serviceSku: service.sku || ''
+      }));
     } catch (e) {}
     window.location.href = 'booking.html';
   }

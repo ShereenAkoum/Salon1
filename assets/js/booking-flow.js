@@ -22,6 +22,31 @@
   const $ = id => document.getElementById(id);
   const t = (en, ar) => state.lang === 'ar' ? ar : en;
 
+  const BOOKING_LOCAL_KEYS = [
+    'salonBookingDraft',
+    'bookingServiceSku',
+    'bookingVoucher',
+    'service',
+    'selectedDates'
+  ];
+
+  function clearBookingLocalStorage(){
+    BOOKING_LOCAL_KEYS.forEach(function(key){
+      try { localStorage.removeItem(key); } catch(e) {}
+    });
+  }
+
+  function readBookingHandoff(){
+    try{
+      const raw=sessionStorage.getItem('bookingHandoff');
+      sessionStorage.removeItem('bookingHandoff');
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){
+      try { sessionStorage.removeItem('bookingHandoff'); } catch(ignore){}
+      return null;
+    }
+  }
+
   function money(value){
     if (value === null || value === undefined || value === '') return '—';
     const symbol = (state.config && state.config.currencyOptions && state.config.currencyOptions[state.currency])
@@ -376,6 +401,11 @@
 
   async function init(){
     try{
+      // A booking is intentionally session-only. Clear any legacy/stale
+      // localStorage values before building the new booking state.
+      const handoff = readBookingHandoff();
+      clearBookingLocalStorage();
+
       const [serviceResult, bookingConfig, vouchers, appSettings] = await Promise.all([
         loadSalonServices(),
         loadBookingConfiguration(),
@@ -415,11 +445,10 @@
       // A voucher is represented as a normal booking item so the existing
       // date/time, availability, review, local-booking and Formspree logic
       // can be reused without creating a second booking flow.
-      const rawVoucher=localStorage.getItem('bookingVoucher');
       let pendingVoucher=null;
-      if(rawVoucher){
+      if(handoff && handoff.type === 'voucher' && handoff.voucher){
         try {
-          const parsed=JSON.parse(rawVoucher);
+          const parsed=handoff.voucher;
           const source=(Array.isArray(vouchers)?vouchers:[]).find(v =>
             String(v.id)===String(parsed.id) ||
             String(v.sku||'')===String(parsed.sku||'')
@@ -445,7 +474,7 @@
             };
           }
         } catch(e) {
-          console.warn('Could not read bookingVoucher:',e);
+          console.warn('Could not read booking voucher handoff:',e);
         }
       }
 
@@ -459,8 +488,6 @@
         state.bookings.length,
         'bookings'
       );
-      const saved=localStorage.getItem('salonBookingDraft');
-      if(saved){ try { const d=JSON.parse(saved); state.selected=d.selected||[]; state.date=d.date||null; state.start=d.start||null; } catch(e){} }
 
       if(pendingVoucher){
         // Voucher bookings are standalone: exactly one voucher can be active.
@@ -469,27 +496,20 @@
         state.selected=[pendingVoucher.sku];
         state.date=null;
         state.start=null;
-        localStorage.removeItem('bookingVoucher');
-        saveDraft();
+      } else if(handoff && handoff.type === 'service'){
+        const found=state.services.find(s =>
+          (handoff.serviceSku && s.sku===handoff.serviceSku) ||
+          (handoff.serviceName && (s['name-en']===handoff.serviceName || s['name-ar']===handoff.serviceName))
+        );
+        if(found && duration(found)!=null){
+          state.selected=[found.sku];
+          state.date=null;
+          state.start=null;
+        }
       }
 
       const initialView = state.date ? new Date(state.date+'T12:00:00') : new Date();
       setViewMonth(initialView.getFullYear(), initialView.getMonth());
-      if(!state.selected.length){
-        const sku=localStorage.getItem('bookingServiceSku');
-        if(sku){
-          const found=state.services.find(s=>s.sku===sku);
-          if(found) state.selected=[found.sku];
-          localStorage.removeItem('bookingServiceSku');
-        }
-      }
-      if(!state.selected.length){
-        const legacy=localStorage.getItem('service');
-        if(legacy){
-          const found=state.services.find(s=>s['name-en']===legacy || s['name-ar']===legacy);
-          if(found) state.selected=[found.sku];
-        }
-      }
       state.initialized=true;
       render();
       showStep(state.voucher ? 2 : 1);
@@ -501,7 +521,8 @@
   }
 
   function saveDraft(){
-    localStorage.setItem('salonBookingDraft',JSON.stringify({selected:state.selected,date:state.date,start:state.start}));
+    // Booking state lives in memory while booking.html is open.
+    // Deliberately do not persist service/date/time selections in localStorage.
   }
 
   function getService(sku){ return state.services.find(s=>s.sku===sku); }
@@ -1067,7 +1088,7 @@
       success.innerHTML += `<p class="booking-notification-status ${emailSent?'is-sent':'is-warning'}">${esc(notification)}</p>`;
     }
 
-    localStorage.removeItem('salonBookingDraft');
+    clearBookingLocalStorage();
     state.bookings=state.bookings.filter(b=>String(b.id)!==String(id));
     state.bookings.push({
       id,date:state.date,status:'pending',items,customer,total:total(),currency:state.currency
@@ -1106,7 +1127,13 @@
   window.chooseService=function(serviceName,displayName,categoryName,categoryDisplayName){
     const found=state.services.find(s=>s['name-en']===serviceName||s['name-ar']===displayName);
     if(found && duration(found)!=null){state.selected=[found.sku];state.date=null;state.start=null;saveDraft();}
-    else { localStorage.setItem('service', serviceName); localStorage.removeItem('selectedDates'); }
+    else {
+      sessionStorage.setItem('bookingHandoff', JSON.stringify({
+        type: 'service',
+        serviceName: serviceName || '',
+        serviceSku: ''
+      }));
+    }
     window.location.href='booking.html';
   };
 

@@ -293,3 +293,8 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 .crm-rule-times{font-size:12px;line-height:1.5;max-width:240px}
 .crm-row-actions{display:flex;gap:7px;flex-wrap:wrap}
 .crm-row-actions .crm-btn{padding:7px 10px}
+
+/* Booking appointment editor */
+.crm-booking-edit-section .crm-form-grid{margin:12px 0 10px;}
+.crm-booking-edit-help{display:block;margin:0 0 12px;line-height:1.45;}
+#crm-edit-booking-message{display:inline-block;margin-left:10px;}
