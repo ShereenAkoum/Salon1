@@ -265,16 +265,16 @@ body.crm-page{margin:0;background:linear-gradient(135deg,#faf8f6 0%,#f4eee9 100%
 .crm-settings-help{margin-top:11px;color:var(--crm-muted);font-size:11px;line-height:1.5}
 .crm-settings-empty{padding:18px;border:1px dashed #d8cec7;border-radius:12px;text-align:center;color:var(--crm-muted);font-size:12px;background:#fcfaf8}
 .crm-settings-actions{
-  position:sticky;
-  bottom:14px;
-  z-index:25;
+  grid-column:1 / -1;
+  position:static;
+  z-index:auto;
   display:flex;
   justify-content:flex-end;
   margin-top:22px;
-  padding:12px 0;
-  background:linear-gradient(to bottom,rgba(247,244,241,0),rgba(247,244,241,.94) 28%,rgba(247,244,241,.98));
-  backdrop-filter:blur(7px);
-  -webkit-backdrop-filter:blur(7px);
+  padding:0 0 8px;
+  background:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
 }
 .crm-settings-actions .crm-btn{
   min-width:150px;
