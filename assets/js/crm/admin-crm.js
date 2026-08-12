@@ -140,25 +140,58 @@
     $('customer-detail-contact').textContent = [c.phone, c.email].filter(Boolean).join(' • ') || 'No contact information';
     $('customer-detail-notes').textContent = c.notes || 'No notes.';
     $('customer-detail-card').classList.remove('crm-hidden');
-    var result = await window.salonSupabase
-      .from('bookings')
-      .select('id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_notes,booking_services(id,start_time,end_time,price,duration_minutes,services(name_en,sku))')
-      .eq('customer_id', c.id)
-      .order('booking_date', {ascending:false})
-      .order('start_time', {ascending:false});
-    if (result.error) {
-      message(result.error.message,'error');
+
+    var results = await Promise.all([
+      window.salonSupabase
+        .from('bookings')
+        .select('id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_notes')
+        .eq('customer_id', c.id)
+        .order('booking_date', {ascending:false})
+        .order('start_time', {ascending:false}),
+      window.salonSupabase
+        .from('booking_services')
+        .select('id,booking_id,service_id,start_time,end_time,price,duration_minutes,voucher_id')
+        .order('start_time', {ascending:true})
+    ]);
+
+    if (results[0].error) {
+      message(results[0].error.message,'error');
       return;
     }
-    var bookings = result.data || [];
+    if (results[1].error) {
+      message(results[1].error.message,'error');
+      return;
+    }
+
+    var bookings = results[0].data || [];
+    var bookingServices = results[1].data || [];
+    var servicesById = {};
+    state.services.forEach(function(service){ servicesById[String(service.id)] = service; });
+    var vouchersById = {};
+    state.vouchers.forEach(function(voucher){ vouchersById[String(voucher.id)] = voucher; });
+    var itemsByBooking = {};
+
+    bookingServices.forEach(function(bs) {
+      var key = String(bs.booking_id);
+      if (!itemsByBooking[key]) itemsByBooking[key] = [];
+      itemsByBooking[key].push(bs);
+    });
+
     $('customer-booking-count').textContent = bookings.length;
     var total = bookings.reduce(function(sum,b){ return sum + Number(b.total_price||0); },0);
     $('customer-total-spent').textContent = total.toFixed(2);
+
     $('customer-booking-history').innerHTML = bookings.map(function(b){
-      var services=(b.booking_services||[]).map(function(bs){
-        return bs.services && bs.services.name_en ? bs.services.name_en : 'Service';
+      var names=(itemsByBooking[String(b.id)]||[]).map(function(bs){
+        if (bs.voucher_id != null) {
+          var voucher = vouchersById[String(bs.voucher_id)];
+          return voucher ? (voucher.title_en || voucher.title || 'Voucher') : 'Voucher';
+        }
+        var service = bs.service_id != null ? servicesById[String(bs.service_id)] : null;
+        return service ? (service.name_en || service.name || 'Service') : 'Service';
       }).join(', ');
-      return '<tr><td>'+escapeHtml(b.booking_date||'—')+'</td><td>'+escapeHtml((b.start_time||'')+' – '+(b.end_time||''))+'</td><td>'+escapeHtml(services||'—')+'</td><td>'+escapeHtml(b.status||'—')+'</td><td>'+Number(b.total_price||0).toFixed(2)+'</td></tr>';
+
+      return '<tr><td>'+escapeHtml(b.booking_date||'—')+'</td><td>'+escapeHtml((b.start_time||'')+' – '+(b.end_time||''))+'</td><td>'+escapeHtml(names||'—')+'</td><td>'+escapeHtml(b.status||'—')+'</td><td>'+Number(b.total_price||0).toFixed(2)+'</td></tr>';
     }).join('') || '<tr><td colspan="5" class="crm-empty">No bookings yet.</td></tr>';
   }
 
@@ -1097,92 +1130,108 @@
 
   async function loadBookings() {
     /*
-     * Supabase is the source of truth for CRM bookings.
+     * Current Supabase schema:
+     *   bookings      -> customer_id, total_price, total_duration_minutes
+     *   customers     -> name, phone, email, notes
+     *   booking_services -> one row per booked item, with either service_id
+     *                        or voucher_id
      *
-     * IMPORTANT: the live bookings table does NOT use the old JSON fields
-     * (date/items/total/customer). It uses booking_date, customer_id,
-     * total_price and booking_services. The old query ordered by `date`,
-     * which made Supabase return an error and silently sent the CRM to the
-     * local JSON fallback. That is why confirmed test bookings were shown
-     * while the real pending booking was missing.
+     * Do not query the old JSON/items/customer_name columns here. Those were
+     * used by an earlier booking schema and cause PostgREST 42703 errors.
      */
     var dbBookings = null;
     try {
-      var result = await window.salonSupabase
-        .from('bookings')
-        .select('id,public_reference,customer_id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_notes,created_at')
-        .order('id',{ascending:false});
-      if (result.error) throw result.error;
-
-      var rows = result.data || [];
-      var customerIds = rows.map(function(r){ return r.customer_id; }).filter(function(id){ return id != null; });
-      var customersById = {};
-      if (customerIds.length) {
-        var cr = await window.salonSupabase
+      var results = await Promise.all([
+        window.salonSupabase
+          .from('bookings')
+          .select('id,booking_date,start_time,end_time,status,total_price,total_duration_minutes,customer_id,customer_notes,created_at,public_reference')
+          .order('created_at',{ascending:false}),
+        window.salonSupabase
           .from('customers')
-          .select('id,name,phone,email,notes')
-          .in('id', Array.from(new Set(customerIds)));
-        if (cr.error) throw cr.error;
-        (cr.data || []).forEach(function(c){ customersById[String(c.id)] = c; });
-      }
-
-      var bookingIds = rows.map(function(r){ return r.id; }).filter(function(id){ return id != null; });
-      var bookingServices = [];
-      if (bookingIds.length) {
-        var br = await window.salonSupabase
+          .select('id,name,phone,email,notes'),
+        window.salonSupabase
           .from('booking_services')
-          .select('id,booking_id,service_id,start_time,end_time,price,duration_minutes')
-          .in('booking_id', Array.from(new Set(bookingIds)));
-        if (br.error) throw br.error;
-        bookingServices = br.data || [];
-      }
+          .select('id,booking_id,service_id,staff_id,start_time,end_time,price,duration_minutes,voucher_id')
+          .order('start_time',{ascending:true})
+      ]);
 
-      var serviceIds = bookingServices.map(function(r){ return r.service_id; }).filter(function(id){ return id != null; });
+      var bookingsResult = results[0];
+      var customersResult = results[1];
+      var bookingServicesResult = results[2];
+
+      if (bookingsResult.error) throw bookingsResult.error;
+      if (customersResult.error) throw customersResult.error;
+      if (bookingServicesResult.error) throw bookingServicesResult.error;
+
+      var customersById = {};
+      (customersResult.data || []).forEach(function(customer) {
+        customersById[String(customer.id)] = customer;
+      });
+
       var servicesById = {};
-      if (serviceIds.length) {
-        var sr = await window.salonSupabase
-          .from('services')
-          .select('id,sku,name_en,name_ar,price_usd,price_qar')
-          .in('id', Array.from(new Set(serviceIds)));
-        if (sr.error) throw sr.error;
-        (sr.data || []).forEach(function(svc){ servicesById[String(svc.id)] = svc; });
-      }
+      state.services.forEach(function(service) {
+        servicesById[String(service.id)] = service;
+      });
+
+      var vouchersById = {};
+      state.vouchers.forEach(function(voucher) {
+        vouchersById[String(voucher.id)] = voucher;
+      });
 
       var itemsByBooking = {};
-      bookingServices.forEach(function(item){
-        var key=String(item.booking_id);
-        if(!itemsByBooking[key]) itemsByBooking[key]=[];
-        var svc=servicesById[String(item.service_id)] || {};
-        itemsByBooking[key].push({
-          serviceSku: svc.sku || '',
-          start: String(item.start_time || '').slice(0,5),
-          end: String(item.end_time || '').slice(0,5),
-          price: item.price,
-          duration_minutes: item.duration_minutes,
-          serviceName: svc.name_en || ''
-        });
-      });
-      Object.keys(itemsByBooking).forEach(function(key){
-        itemsByBooking[key].sort(function(a,b){ return a.start.localeCompare(b.start); });
+      (bookingServicesResult.data || []).forEach(function(row) {
+        var service = row.service_id != null ? servicesById[String(row.service_id)] : null;
+        var voucher = row.voucher_id != null ? vouchersById[String(row.voucher_id)] : null;
+
+        var item = {
+          id: row.id,
+          serviceId: row.service_id,
+          voucherId: row.voucher_id,
+          serviceSku: service ? (service.sku || '') : '',
+          voucherSku: voucher ? (voucher.sku || '') : '',
+          start: String(row.start_time || '').slice(0,5),
+          end: String(row.end_time || '').slice(0,5),
+          price: row.price,
+          duration_minutes: row.duration_minutes,
+          serviceName: service ? (service.name_en || service.name || '') : '',
+          voucherName: voucher ? (voucher.title_en || voucher.title || '') : ''
+        };
+
+        if (!itemsByBooking[String(row.booking_id)]) itemsByBooking[String(row.booking_id)] = [];
+        itemsByBooking[String(row.booking_id)].push(item);
       });
 
-      dbBookings = rows.map(function(row){
-        var customer = customersById[String(row.customer_id)] || {};
+      dbBookings = (bookingsResult.data || []).map(function(row) {
+        var customer = row.customer_id != null
+          ? (customersById[String(row.customer_id)] || null)
+          : null;
+
+        var items = itemsByBooking[String(row.id)] || [];
+        items.sort(function(a,b) {
+          return a.start.localeCompare(b.start);
+        });
+
         return {
-          id: row.public_reference || String(row.id),
+          id: String(row.id),
           databaseId: row.id,
+          publicReference: row.public_reference || '',
           date: row.booking_date,
+          start_time: row.start_time,
+          end_time: row.end_time,
           status: String(row.status || 'pending').toLowerCase(),
           total: row.total_price,
+          total_duration_minutes: row.total_duration_minutes,
           currency: 'USD',
           customer: {
-            name: customer.name || 'Customer',
-            phone: customer.phone || '',
-            email: customer.email || '',
-            notes: row.customer_notes || customer.notes || ''
+            id: row.customer_id,
+            name: customer ? (customer.name || 'Customer') : 'Customer',
+            phone: customer ? (customer.phone || '') : '',
+            email: customer ? (customer.email || '') : '',
+            notes: row.customer_notes || (customer ? (customer.notes || '') : '')
           },
-          items: itemsByBooking[String(row.id)] || [],
-          created_at: row.created_at
+          items: items,
+          created_at: row.created_at,
+          updated_at: row.updated_at
         };
       });
     } catch (e) {
@@ -1190,18 +1239,11 @@
       dbBookings = null;
     }
 
-    /*
-     * Supabase is the source of truth for CRM bookings.
-     * Keep the browser-local booking cache only for existing local/test
-     * behavior; there is no JSON booking catalogue anymore.
-     */
     var local = bookingStore();
-
     state.bookingVouchers = state.vouchers.slice();
-
     var source = dbBookings !== null ? dbBookings : local;
     state.bookings = source.slice().sort(function(a,b) {
-      return Number(b.databaseId || 0) - Number(a.databaseId || 0);
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
     });
     renderBookings();
     updateBookingDashboardStat();
@@ -1231,16 +1273,32 @@
   }
 
   function serviceForBookingItem(item) {
-    var found = state.services.find(function(s){ return String(s.sku || '') === String(item.serviceSku || ''); });
-    if (found) return { name: found.name_en || found.name || item.serviceSku, duration: found.duration_minutes, price: found.price_usd };
-    var voucher = state.bookingVouchers.find(function(v){ return String(v.sku || v.id || '') === String(item.serviceSku || ''); });
+    var voucher = item && item.voucherId != null
+      ? state.bookingVouchers.find(function(v){ return String(v.id) === String(item.voucherId); })
+      : null;
+    if (!voucher && item && item.voucherSku) {
+      voucher = state.bookingVouchers.find(function(v){ return String(v.sku || '') === String(item.voucherSku); });
+    }
     if (voucher) return {
-      name: voucher.title_en || voucher.title || 'Voucher',
-      duration: voucher.duration_minutes || voucher.durationMinutes || 30,
-      price: voucher.price_usd != null ? voucher.price_usd : voucher.price,
+      name: voucher.title_en || voucher.title || item.voucherSku || 'Voucher',
+      duration: voucher.duration_minutes || voucher.durationMinutes || item.duration_minutes || 30,
+      price: voucher.price_usd != null ? voucher.price_usd : (voucher.price != null ? voucher.price : item.price),
       voucher: true
     };
-    return { name: item.serviceSku || 'Service', duration: null, price: null };
+
+    var found = item && item.serviceId != null
+      ? state.services.find(function(s){ return String(s.id) === String(item.serviceId); })
+      : null;
+    if (!found && item && item.serviceSku) {
+      found = state.services.find(function(s){ return String(s.sku || '') === String(item.serviceSku); });
+    }
+    if (found) return {
+      name: found.name_en || found.name || item.serviceSku || 'Service',
+      duration: found.duration_minutes || item.duration_minutes,
+      price: found.price_usd != null ? found.price_usd : (found.price != null ? found.price : item.price)
+    };
+
+    return { name: (item && (item.voucherName || item.serviceName || item.voucherSku || item.serviceSku)) || 'Service', duration: item ? item.duration_minutes : null, price: item ? item.price : null };
   }
 
   function bookingServiceNames(b) {
@@ -1307,8 +1365,9 @@
   }
 
   function isBlockingStatus(b) {
-    var s = bookingStatus(b);
-    return s === 'pending' || s === 'confirmed';
+    // Only confirmed appointments reserve time on the public calendar.
+    // Pending requests are requests, not reservations.
+    return bookingStatus(b) === 'confirmed';
   }
 
   function overlaps(a,b) {
@@ -1485,10 +1544,50 @@
 
   async function updateBookingStatusInDatabase(id,status){
     var result=await window.salonSupabase.from('bookings').update({
-      status:status,
-      updated_at:new Date().toISOString()
+      status:status
     }).eq('id',id);
     if(result.error) throw result.error;
+  }
+
+  function shiftBookingItems(items, newStart) {
+    var source = Array.isArray(items) ? items : [];
+    if (!source.length) return [];
+    var firstStart = parseTimeMinutes(source[0].start);
+    var targetStart = parseTimeMinutes(newStart);
+    if (firstStart == null || targetStart == null) throw new Error('Invalid appointment time.');
+
+    var delta = targetStart - firstStart;
+    function clock(total){
+      if(total < 0 || total >= 24*60) throw new Error('The appointment cannot extend past midnight.');
+      return pad2(Math.floor(total/60))+':'+pad2(total%60);
+    }
+    return source.map(function(item){
+      var start = parseTimeMinutes(item.start);
+      var end = parseTimeMinutes(item.end);
+      if (start == null || end == null || end <= start) throw new Error('Invalid appointment time.');
+      return Object.assign({}, item, {
+        start: clock(start + delta),
+        end: clock(end + delta)
+      });
+    });
+  }
+
+  async function updateBookingAppointmentInDatabase(id, date, items){
+    var result=await window.salonSupabase.from('bookings').update({
+      booking_date:date
+    }).eq('id',id);
+    if(result.error) throw result.error;
+
+    var source = Array.isArray(items) ? items : [];
+    await Promise.all(source.filter(function(item){ return item && item.id != null; }).map(function(item){
+      return window.salonSupabase.from('booking_services').update({
+        start_time:item.start,
+        end_time:item.end
+      }).eq('id',item.id).eq('booking_id',id).then(function(r){
+        if(r.error) throw r.error;
+        return r;
+      });
+    }));
   }
 
   function findBooking(id) {
@@ -1514,12 +1613,85 @@
         '<div><span class="crm-detail-label">Email</span><strong>' + escapeHtml(c.email || '—') + '</strong></div>' +
         '<div><span class="crm-detail-label">Appointment</span><strong>' + escapeHtml(dateText) + '</strong><span>' + escapeHtml(bookingStart(b) || '—') + (bookingEnd(b) ? ' – ' + escapeHtml(bookingEnd(b)) : '') + '</span></div>' +
       '</div>' +
+      '<div class="crm-detail-section crm-booking-edit-section">' +
+        '<div class="crm-section-label">Adjust appointment</div>' +
+        '<div class="crm-form-grid">' +
+          '<div class="crm-field"><label for="crm-edit-booking-date">Date</label><input id="crm-edit-booking-date" type="date" value="' + escapeHtml(b.date || '') + '"></div>' +
+          '<div class="crm-field"><label for="crm-edit-booking-start">Start time</label><input id="crm-edit-booking-start" type="time" value="' + escapeHtml(bookingStart(b) || '') + '"></div>' +
+        '</div>' +
+        '<div class="crm-small crm-booking-edit-help">Changing the start time moves the entire appointment by the same amount and keeps each service duration. Pending requests do not block other customers.</div>' +
+        '<button type="button" class="crm-btn crm-btn-secondary" data-save-booking-appointment="' + escapeHtml(b.id) + '">Save date & time</button>' +
+        '<span id="crm-edit-booking-message" class="crm-small"></span>' +
+      '</div>' +
       '<div class="crm-detail-section"><div class="crm-section-label">Services</div>' + items + '</div>' +
       '<div class="crm-detail-total"><span>Total</span><strong>' + bookingMoney(b) + '</strong></div>' +
       (c.notes ? '<div class="crm-detail-section"><div class="crm-section-label">Customer notes</div><p class="crm-detail-notes">' + escapeHtml(c.notes) + '</p></div>' : '') +
       '<div class="crm-detail-actions">' + nextStatuses + '</div>';
     $('booking-detail-modal').classList.remove('crm-hidden');
     $('booking-detail-modal').setAttribute('aria-hidden','false');
+  }
+
+  async function saveBookingAppointment(id) {
+    var b = findBooking(id);
+    if (!b) return;
+    var dateInput = $('crm-edit-booking-date');
+    var startInput = $('crm-edit-booking-start');
+    var messageEl = $('crm-edit-booking-message');
+    if (!dateInput || !startInput) return;
+
+    var date = dateInput.value;
+    var start = startInput.value;
+    if (!date || !start) {
+      if (messageEl) messageEl.textContent = 'Please choose a date and start time.';
+      return;
+    }
+
+    var items;
+    try {
+      items = shiftBookingItems(b.items, start);
+    } catch (e) {
+      if (messageEl) messageEl.textContent = e.message || 'Invalid appointment time.';
+      return;
+    }
+
+    // Only confirmed appointments are hard reservations. A pending request
+    // may be moved freely; when the admin confirms it, the overlap check
+    // below is performed against other confirmed appointments.
+    if (bookingStatus(b) === 'confirmed') {
+      var candidate = Object.assign({}, b, {date:date, items:items});
+      var conflict = hasBlockingOverlap(candidate, id);
+      if (conflict) {
+        var cc = bookingCustomer(conflict);
+        if (messageEl) messageEl.textContent =
+          'This time overlaps confirmed booking ' + (cc.name || conflict.id) + '.';
+        return;
+      }
+    }
+
+    var button = document.querySelector('[data-save-booking-appointment="' + CSS.escape(String(id)) + '"]');
+    if (button) {
+      button.disabled = true;
+      button.dataset.originalText = button.textContent;
+      button.textContent = 'Saving…';
+    }
+
+    try {
+      await updateBookingAppointmentInDatabase(b.databaseId || id, date, items);
+      b.date = date;
+      b.items = items;
+      b.updated_at = new Date().toISOString();
+      persistBookings();
+      renderBookings();
+      renderBookingDetail(id);
+      message('Appointment date/time updated.', 'success');
+    } catch (e) {
+      console.error('Could not update booking appointment:', e);
+      if (messageEl) messageEl.textContent = 'Could not save the appointment: ' + (e.message || 'Unknown error');
+      if (button) {
+        button.disabled = false;
+        button.textContent = button.dataset.originalText || 'Save date & time';
+      }
+    }
   }
 
   function closeBookingDetail() {
@@ -1691,7 +1863,12 @@
     document.querySelectorAll('[data-booking-filter]').forEach(function(b){b.addEventListener('click',function(){state.bookingFilter=b.getAttribute('data-booking-filter');renderBookings();});});
     $('bookings-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-view-booking]');if(b)renderBookingDetail(b.getAttribute('data-view-booking'));});
     document.querySelectorAll('[data-close-booking]').forEach(function(el){el.addEventListener('click',closeBookingDetail);});
-    $('booking-detail-content').addEventListener('click',function(e){var b=e.target.closest('[data-booking-status]');if(b)updateBookingStatus(b.getAttribute('data-booking-id'),b.getAttribute('data-booking-status'));});
+    $('booking-detail-content').addEventListener('click',function(e){
+      var statusButton=e.target.closest('[data-booking-status]');
+      if(statusButton) updateBookingStatus(statusButton.getAttribute('data-booking-id'),statusButton.getAttribute('data-booking-status'));
+      var saveButton=e.target.closest('[data-save-booking-appointment]');
+      if(saveButton) saveBookingAppointment(saveButton.getAttribute('data-save-booking-appointment'));
+    });
     document.querySelectorAll('[data-booking-view]').forEach(function(b){b.addEventListener('click',function(){setBookingView(b.getAttribute('data-booking-view'));});});
     $('schedule-prev').addEventListener('click',function(){state.scheduleDate.setDate(state.scheduleDate.getDate()-7);renderSchedule();});
     $('schedule-next').addEventListener('click',function(){state.scheduleDate.setDate(state.scheduleDate.getDate()+7);renderSchedule();});
