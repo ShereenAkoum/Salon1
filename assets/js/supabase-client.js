@@ -71,6 +71,74 @@
       return result.data || [];
     },
 
+
+
+    async updateBookingSettings(payload) {
+      var result = await window.salonSupabase
+        .from('booking_settings')
+        .upsert(Object.assign({ id: 1 }, payload), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (result.error) throw result.error;
+      return result.data;
+    },
+
+    async createBookingScheduleRule(payload) {
+      var result = await window.salonSupabase
+        .from('booking_blackouts')
+        .insert(payload)
+        .select('*')
+        .single();
+      if (result.error) throw result.error;
+      return result.data;
+    },
+
+    async updateBookingScheduleRule(id, payload) {
+      var result = await window.salonSupabase
+        .from('booking_blackouts')
+        .update(payload)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+      if (result.error) throw result.error;
+      if (!result.data) throw new Error('Booking blackout was not updated. Check the admin RLS policy.');
+      return result.data;
+    },
+
+    async deleteBookingScheduleRule(id) {
+      var result = await window.salonSupabase
+        .from('booking_blackouts')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (result.error) throw result.error;
+      if (!result.data) throw new Error('Booking blackout was not deleted. Check the admin RLS policy.');
+      return true;
+    },
+
+    async getBookingConfiguration() {
+      var settingsResult = await window.salonSupabase
+        .from('booking_settings')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (settingsResult.error) throw settingsResult.error;
+
+      var scheduleResult = await window.salonSupabase
+        .from('booking_blackouts')
+        .select('*')
+        .order('starts_at', { ascending: true });
+
+      if (scheduleResult.error) throw scheduleResult.error;
+
+      return {
+        settings: settingsResult.data || null,
+        schedule: scheduleResult.data || []
+      };
+    },
+
     async getVouchers() {
       var result = await window.salonSupabase
         .from('vouchers')

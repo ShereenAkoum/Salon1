@@ -45,10 +45,64 @@
     return value == null ? '—' : `${value} ${t('min','دقيقة')}`;
   }
 
-  async function loadJSON(path){
-    const r=await fetch(path,{cache:'no-store'});
-    if(!r.ok) throw new Error('Could not load '+path);
-    return r.json();
+  async function loadBookingConfiguration(){
+    if(!window.salonDatabase || !window.salonDatabase.getBookingConfiguration){
+      throw new Error('Supabase booking configuration is not available.');
+    }
+
+    const fallback = {
+      settings: {
+        slot_minutes: 30,
+        opening_time: '09:00',
+        closing_time: '18:00',
+        advance_months: 3,
+        messages: {
+          en: { closed: 'Closed', booked: 'Booked', available: 'Available' },
+          ar: { closed: 'مغلق', booked: 'محجوز', available: 'متاح' }
+        },
+        date_time_text: {},
+        review_text: {}
+      },
+      schedule: []
+    };
+
+    let result;
+    try {
+      result = await window.salonDatabase.getBookingConfiguration();
+    } catch (error) {
+      console.warn('[Booking] Supabase booking configuration unavailable; using built-in defaults.', error);
+      result = fallback;
+    }
+
+    const settings = result && result.settings ? result.settings : fallback.settings;
+    const slotMinutes = Number(settings.slot_minutes || 30);
+    const opening = String(settings.opening_time || '09:00').slice(0,5);
+    const closing = String(settings.closing_time || '18:00').slice(0,5);
+
+    const slots = [];
+    for(let cursor = toMin(opening); cursor < toMin(closing); cursor += slotMinutes){
+      slots.push(minutesToTime(cursor));
+    }
+
+    return {
+      config: {
+        months: {
+          en: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+          ar: ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+        },
+        days: {
+          en: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+          ar: ['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت']
+        },
+        timeSlots: slots,
+        slotMinutes,
+        advanceMonths: Number(settings.advance_months || 3),
+        messages: settings.messages || {},
+        dateTimeText: settings.date_time_text || {},
+        bookingReview: settings.review_text || {}
+      },
+      scheduleRules: Array.isArray(result && result.schedule) ? result.schedule : []
+    };
   }
 
 
@@ -75,13 +129,17 @@
 
     if(result.error) throw result.error;
 
+    // Only CONFIRMED bookings block public availability. Pending requests are
+    // intentionally ignored so an abandoned/unconfirmed request never locks
+    // a slot for other customers.
     const grouped={};
     (result.data||[]).forEach(row=>{
+      if(String(row.status || '').toLowerCase() !== 'confirmed') return;
       const id=String(row.booking_id);
       if(!grouped[id]) grouped[id]={
         id,
         date:row.booking_date,
-        status:row.status,
+        status:'confirmed',
         items:[]
       };
       grouped[id].items.push({
@@ -264,10 +322,9 @@
 
   async function init(){
     try{
-      const [serviceResult, config, schedule, vouchers, appSettings] = await Promise.all([
+      const [serviceResult, bookingConfig, vouchers, appSettings] = await Promise.all([
         loadSalonServices(),
-        loadJSON('assets/data/booking-date-time.json'),
-        loadJSON('assets/data/salon-schedule.json').catch(()=>({monthlySchedule:{}})),
+        loadBookingConfiguration(),
         loadVouchersFromSupabase().catch(e => {
           console.warn('[Booking] Could not load vouchers from Supabase; using the selected voucher payload if available.', e);
           return [];
@@ -287,11 +344,13 @@
 
       const services = serviceResult.data || { categories: [] };
 
+      const config = bookingConfig.config;
       state.config=Object.assign({}, config, {
-        currencyOptions: (appSettings && appSettings.currency_options) || config.currencyOptions,
+        currencyOptions: (appSettings && appSettings.currency_options) || {},
         displayCurrency: (appSettings && appSettings.display_currency) || 'USD'
       });
       state.currency=(appSettings && appSettings.display_currency) || 'USD';
+      state.scheduleRules=bookingConfig.scheduleRules || [];
       state.categories=services.categories || [];
       state.services=state.categories.flatMap(c => (c.services||[]).filter(s=>s.active).map(s=>({...s,category:c})));
 
@@ -338,7 +397,6 @@
 
       state.selected=state.selected.filter(sku=>state.services.some(s=>s.sku===sku && duration(s)!=null));
       state.bookings=bookingResult.data || [];
-      state.schedule=schedule || {monthlySchedule:{}};
 
       console.info(
         '[Booking] Booking availability source:',
@@ -491,34 +549,46 @@
     renderCalendarView(view);
   }
 
-  function scheduleFor(iso){
-    const d=new Date(iso+'T12:00:00');
-    const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
-    return (state.schedule && state.schedule.monthlySchedule && state.schedule.monthlySchedule[months[d.getMonth()]]) || {};
+  function localDateTime(iso, time){
+    return new Date(`${iso}T${String(time || '00:00').slice(0,5)}:00`);
   }
+
+  function parseStoredBlackoutLocal(value){
+    if(!value) return null;
+    const raw=String(value).trim().replace(' ','T');
+    const match=raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?/);
+    if(!match) return null;
+    const d=new Date(`${match[1]}T${match[2]}:${match[3] || '00'}`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function blackoutOverlaps(iso, start, end){
+    const from = localDateTime(iso, start);
+    const to = localDateTime(iso, end);
+    const blackouts = Array.isArray(state.scheduleRules) ? state.scheduleRules : [];
+
+    return blackouts.some(rule => {
+      if(!rule || !rule.starts_at || !rule.ends_at) return false;
+      const blockedFrom = parseStoredBlackoutLocal(rule.starts_at);
+      const blockedTo = parseStoredBlackoutLocal(rule.ends_at);
+      if(!blockedFrom || !blockedTo || blockedTo <= blockedFrom) return false;
+      return from < blockedTo && to > blockedFrom;
+    });
+  }
+
   function slotClosed(iso,start){
-    const d=new Date(iso+'T12:00:00');
-    const ms=scheduleFor(iso);
-    if((ms.closedDays||[]).includes(d.getDay())) return true;
-    const override=(ms.closedDates||{})[String(d.getDate())];
-    if(override && override.fullyClose) return true;
-    const slots=state.config.timeSlots||[];
-    const idx=slots.indexOf(start);
-    const closed=(override && Array.isArray(override.closedTime)) ? override.closedTime : (ms.closedTime||[]);
-    return closed.includes(idx);
+    const end=minutesToTime(toMin(start)+totalMinutes());
+    return blackoutOverlaps(iso,start,end);
   }
 
   function isBooked(iso, start, end){
+    // IMPORTANT: only confirmed bookings reserve a slot.
     return state.bookings.some(b=>{
-      if(b.date!==iso || !['confirmed','pending'].includes((b.status||'').toLowerCase())) return false;
-      return (b.items||[]).some(i=>overlap(start,end,i.start,i.end));
-    }) || getLocalBookings().some(b=>{
-      if(b.date!==iso) return false;
+      if(b.date!==iso || String(b.status || '').toLowerCase() !== 'confirmed') return false;
       return (b.items||[]).some(i=>overlap(start,end,i.start,i.end));
     });
   }
 
-  function getLocalBookings(){ try{return JSON.parse(localStorage.getItem('salonTestBookings'))||[];}catch(e){return[];} }
   function overlap(a,b,c,d){return toMin(a)<toMin(d)&&toMin(b)>toMin(c);}
   function toMin(x){const p=x.split(':').map(Number);return p[0]*60+p[1];}
 
@@ -526,12 +596,14 @@
     if(slotClosed(iso,start)) return false;
     const end=minutesToTime(toMin(start)+totalMinutes());
     if(isBooked(iso,start,end)) return false;
-    // All occupied 30-minute intervals must be within salon's configured slots.
+    // Every requested service interval must remain inside the configured
+    // opening/closing window. A blackout is checked against the full interval
+    // above, so a multi-slot service cannot pass through a blocked period.
     const slots=state.config.timeSlots||[];
-    for(let t=toMin(start);t<toMin(end);t+=30){
-      const point=minutesToTime(t);
-      if(!slots.includes(point) || slotClosed(iso,point)) return false;
-    }
+    const first=slots[0];
+    if(!first || toMin(start) < toMin(first)) return false;
+    const closing=minutesToTime(toMin(slots[slots.length-1]) + Number(state.config.slotMinutes || 30));
+    if(toMin(end) > toMin(closing)) return false;
     return true;
   }
 
@@ -909,20 +981,6 @@
       }
       return;
     }
-
-    // Keep the local copy only as a test/fallback cache. CRM and availability
-    // use Supabase as the shared source of truth.
-    const local=getLocalBookings().filter(b=>String(b.id)!==String(id));
-    local.push({
-      id,
-      date:state.date,
-      status:'pending',
-      items,
-      customer,
-      total:total(),
-      currency:state.currency
-    });
-    localStorage.setItem('salonTestBookings',JSON.stringify(local));
 
     if(submitButton){
       submitButton.textContent=t('Sending request…','جارٍ إرسال الطلب…');

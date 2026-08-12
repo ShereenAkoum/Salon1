@@ -12,8 +12,8 @@ The booking experience has been rebuilt from scratch and is now a single mobile-
 
 ## JSON data
 - Supabase `service_categories` + `services` - live service catalogue, prices and durations. A missing/invalid duration defaults to 30 minutes.
-- `assets/data/booking-date-time.json` - booking slots and calendar labels.
-- `assets/data/salon-schedule.json` - opening/closed rules.
+- Supabase `booking_settings` - booking slots and calendar labels.
+- Supabase `booking_schedule_rules` - opening/closed rules.
 - Supabase `get_booked_slots` - live booking availability used to disable occupied slots.
 
 A test booking is included for `2026-08-12`:

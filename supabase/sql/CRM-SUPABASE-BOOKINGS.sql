@@ -76,7 +76,7 @@ as $$
   from public.bookings b
   cross join lateral jsonb_array_elements(b.items) item
   where b.booking_date between p_from and p_to
-    and b.status in ('pending','confirmed');
+    and b.status = 'confirmed';
 $$;
 
 revoke all on function public.get_booked_slots(date,date) from public;
@@ -145,7 +145,7 @@ begin
     from public.bookings b
     cross join lateral jsonb_array_elements(b.items) existing
     where b.booking_date = p_booking_date
-      and b.status in ('pending','confirmed')
+      and b.status = 'confirmed'
       and (existing->>'start')::time < (incoming->>'end')::time
       and (existing->>'end')::time > (incoming->>'start')::time
     limit 1;

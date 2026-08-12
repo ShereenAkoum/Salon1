@@ -6,19 +6,20 @@
   }
   var currentLang = localStorage.getItem('siteLang') || 'en';
 
-  // ── Fetch both JSON files in parallel ────────────────────────────────
+  // Booking configuration is now stored in Supabase alongside the booking
+  // schedule. The remaining site content still uses the existing page JSON.
   Promise.all([
     window.getApplicationSettings ? window.getApplicationSettings() : Promise.resolve(null),
     fetch('assets/data/index.json').then(function (r) { return r.json(); }),
     fetch('assets/data/nav.json').then(function (r) { return r.json(); }),
-    fetch('assets/data/booking-date-time.json').then(function (r) { return r.json(); }).catch(function () { return null; }),
-    fetch('assets/data/booking-review.json').then(function (r) { return r.json(); }).catch(function () { return null; })
+    window.salonDatabase && window.salonDatabase.getBookingConfiguration
+      ? window.salonDatabase.getBookingConfiguration().catch(function () { return null; })
+      : Promise.resolve(null)
   ]).then(function (results) {
     var appSettings = results[0];
     var pageData = results[1];
     var navData = results[2];
-    var bookingDateTimeData = results[3];
-    var bookingReviewData = results[4];
+    var bookingConfiguration = results[3];
 
     if (!localStorage.getItem('siteLang') && appSettings && appSettings.default_language) {
       currentLang = String(appSettings.default_language).toLowerCase();
@@ -92,38 +93,37 @@
         translations[fk][lang] = navData[lang][key];
       });
     });
-    // Process booking-date-time.json
-    if (bookingDateTimeData) {
+    // Process booking settings from Supabase.
+    if (bookingConfiguration && bookingConfiguration.settings) {
+      var bookingSettings = bookingConfiguration.settings;
+      var dateTimeText = bookingSettings.date_time_text || {};
       ['back', 'title', 'description'].forEach(function (field) {
-        ['en', 'ar'].forEach(function (lang) {
-          var val = bookingDateTimeData[field + '-' + lang];
-          if (val) {
-            var fk = 'bookingDateTime.' + field;
-            if (!translations[fk]) translations[fk] = {};
-            translations[fk][lang] = val;
+        if (!dateTimeText[field]) return;
+        var dateTimeKey = 'bookingDateTime.' + field;
+        if (!translations[dateTimeKey]) translations[dateTimeKey] = {};
+        if (dateTimeText[field].en) translations[dateTimeKey].en = dateTimeText[field].en;
+        if (dateTimeText[field].ar) translations[dateTimeKey].ar = dateTimeText[field].ar;
+      });
+
+      var messages = bookingSettings.messages || {};
+
+      ['en', 'ar'].forEach(function (lang) {
+        ['closed', 'booked', 'available'].forEach(function (field) {
+          if (messages[lang] && messages[lang][field]) {
+            var messageKey = 'bookingDateTime.' + field;
+            if (!translations[messageKey]) translations[messageKey] = {};
+            translations[messageKey][lang] = messages[lang][field];
           }
         });
       });
-    }
 
-    // Process booking-review.json
-    if (bookingReviewData && bookingReviewData.bookingReview) {
-      var bookingReviewFields = [
-        'back', 'title', 'description',
-        'serviceLabel', 'dateLabel',
-        'namePlaceholder', 'phonePlaceholder',
-        'submitButton', 'submitting',
-        'successMessage', 'errorMessage','voucherLabel'
-      ];
-      bookingReviewFields.forEach(function (field) {
-        ['en', 'ar'].forEach(function (lang) {
-          var val = bookingReviewData.bookingReview[field + '-' + lang];
-          if (val) {
-            var fk = 'bookingReview.' + field;
-            if (!translations[fk]) translations[fk] = {};
-            translations[fk][lang] = val;
-          }
-        });
+      var review = bookingSettings.review_text || {};
+      Object.keys(review).forEach(function (field) {
+        if (!review[field]) return;
+        var key = 'bookingReview.' + field;
+        if (!translations[key]) translations[key] = {};
+        if (review[field].en) translations[key].en = review[field].en;
+        if (review[field].ar) translations[key].ar = review[field].ar;
       });
     }
 

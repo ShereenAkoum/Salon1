@@ -1553,15 +1553,15 @@
   }
 
   function showView(view){
-    if(view==='users' && !isCrmAdmin()){
-      message('Only administrators can manage CRM users.','error');
+    if((view==='users' || view==='booking-config' || view==='faqs' || view==='settings') && !isCrmAdmin()){
+      message('Only administrators can manage this section.','error');
       return;
     }
     state.currentView=view;
     document.querySelectorAll('.crm-view').forEach(function(el){el.classList.add('crm-hidden');});
     var target=$('view-'+view); if(target)target.classList.remove('crm-hidden');
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-view')===view);});
-    var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],bookings:['Appointments','Bookings'],customers:['Customers','Customers'],settings:['Configuration','Application Settings']};
+    var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],faqs:['Content','FAQs'],bookings:['Appointments','Bookings'],customers:['Customers','Customers'],'booking-config':['Booking','Booking Setup'],settings:['Configuration','Application Settings']};
     var t=titles[view]||titles.dashboard;$('view-eyebrow').textContent=t[0];$('view-title').textContent=t[1];
     if(view==='users') loadUsers().catch(function(e){message(e.message,'error');});
     if(view==='settings') loadApplicationSettings().catch(function(e){message(e.message,'error');});
@@ -1569,6 +1569,7 @@
     if(view==='bookings') loadBookings().catch(function(e){message(e.message,'error');});
     if(view==='dashboard') updateDashboard();
     if(view==='customers') loadCustomers().catch(function(e){message(e.message,'error');});
+    if(view==='booking-config') loadBookingConfig().catch(function(e){message(e.message||'Could not load booking configuration.','error');});
     $('crm-sidebar').classList.remove('open');
   }
 
@@ -1724,4 +1725,163 @@
     window.editCustomer = editCustomer;
     window.startCustomerCreate = startCustomerCreate;
   });
+  var bookingConfigState = { settings: null, rules: [], editingRuleId: null };
+
+  // Booking blackout timestamps are treated as local wall-clock values.
+  // We encode them with a Z suffix when writing so the same clock components
+  // survive whether the Supabase column is timestamptz or timestamp without
+  // time zone. We never let the browser convert the stored wall-clock value
+  // between time zones when putting it back into the datetime-local input.
+  function formatBlackoutDateTime(value) {
+    if(!value) return '—';
+    var raw=String(value).trim().replace(' ','T');
+    var match=raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    if(!match) return String(value);
+    var d=new Date(match[1]+'T'+match[2]+':00');
+    if(Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString([], {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
+
+  function bookingRuleLabel(r) {
+    return formatBlackoutDateTime(r.starts_at)+' → '+formatBlackoutDateTime(r.ends_at);
+  }
+
+  function renderBookingRules() {
+    var body=$('booking-rules-body'); if(!body)return;
+    var rows=bookingConfigState.rules.slice().sort(function(a,b){
+      return String(a.starts_at||'').localeCompare(String(b.starts_at||''));
+    });
+    if(!rows.length){
+      body.innerHTML='<tr><td colspan="2" class="crm-empty">No booking blocks configured.</td></tr>';
+      return;
+    }
+    body.innerHTML=rows.map(function(r){
+      return '<tr>'+
+        '<td><strong>'+escapeHtml(bookingRuleLabel(r))+'</strong></td>'+
+        '<td><div class="crm-row-actions"><button type="button" class="crm-btn crm-btn-secondary edit-booking-rule" data-id="'+r.id+'">Edit</button><button type="button" class="crm-btn crm-btn-danger delete-booking-rule" data-id="'+r.id+'">Delete</button></div></td>'+
+      '</tr>';
+    }).join('');
+    body.querySelectorAll('.edit-booking-rule').forEach(function(b){
+      b.addEventListener('click',function(){openBookingRuleForm(Number(b.dataset.id));});
+    });
+    body.querySelectorAll('.delete-booking-rule').forEach(function(b){
+      b.addEventListener('click',async function(){
+        if(!confirm('Delete this booking block?'))return;
+        try{
+          await window.salonDatabase.deleteBookingScheduleRule(Number(b.dataset.id));
+          await loadBookingConfig();
+          message('Booking block deleted.','success');
+        }catch(e){
+          console.error(e);
+          message(e.message||'Could not delete booking block.','error');
+        }
+      });
+    });
+  }
+
+  function toLocalDateTimeInput(value) {
+    if(!value) return '';
+    var raw=String(value).trim().replace(' ','T');
+    var match=raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    return match ? match[1]+'T'+match[2] : '';
+  }
+
+  function localInputToStorage(value) {
+    // Preserve the exact local clock selected in datetime-local.
+    // The Z suffix is intentional: it makes the stored clock components
+    // stable and prevents Supabase timestamptz from shifting them.
+    return value + ':00Z';
+  }
+
+  function openBookingRuleForm(id) {
+    bookingConfigState.editingRuleId=id||null;
+    var r=id?bookingConfigState.rules.find(function(x){return Number(x.id)===Number(id);}):null;
+    $('booking-rule-form-title').textContent=r?'Edit booking block':'Add booking block';
+    $('booking-rule-start').value=r?toLocalDateTimeInput(r.starts_at):'';
+    $('booking-rule-end').value=r?toLocalDateTimeInput(r.ends_at):'';
+    $('booking-rule-form-card').classList.remove('crm-hidden');
+    $('booking-rule-form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  async function loadBookingConfig() {
+    var cfg=await window.salonDatabase.getBookingConfiguration();
+    bookingConfigState.settings=cfg.settings||{};
+    bookingConfigState.rules=cfg.schedule||[];
+    var s=bookingConfigState.settings;
+    var slot=$('booking-slot-minutes'); if(slot) slot.value=s.slot_minutes??30;
+    var advance=$('booking-advance-months'); if(advance) advance.value=s.advance_months??3;
+    var opening=$('booking-opening-time'); if(opening) opening.value=String(s.opening_time||'09:00').slice(0,5);
+    var closing=$('booking-closing-time'); if(closing) closing.value=String(s.closing_time||'18:00').slice(0,5);
+    var messages=$('booking-messages-json'); if(messages) messages.value=JSON.stringify(s.messages||{},null,2);
+    var dateText=$('booking-date-text-json'); if(dateText) dateText.value=JSON.stringify(s.date_time_text||{},null,2);
+    var review=$('booking-review-text-json'); if(review) review.value=JSON.stringify(s.review_text||{},null,2);
+    renderBookingRules();
+  }
+
+  async function saveBookingSettings(e) {
+    e.preventDefault();
+    try {
+      await window.salonDatabase.updateBookingSettings({
+        slot_minutes:Number($('booking-slot-minutes').value),
+        advance_months:Number($('booking-advance-months').value),
+        opening_time:$('booking-opening-time').value,
+        closing_time:$('booking-closing-time').value
+      });
+      await loadBookingConfig(); message('Booking settings saved.','success');
+    } catch(err){ console.error(err); message(err.message||'Could not save booking settings.','error'); }
+  }
+
+  async function saveBookingText(e) {
+    e.preventDefault();
+    try {
+      var messages=JSON.parse($('booking-messages-json').value||'{}');
+      var dateText=JSON.parse($('booking-date-text-json').value||'{}');
+      var review=JSON.parse($('booking-review-text-json').value||'{}');
+      await window.salonDatabase.updateBookingSettings({messages:messages,date_time_text:dateText,review_text:review});
+      await loadBookingConfig(); message('Booking page text saved.','success');
+    } catch(err){ console.error(err); message(err.name==='SyntaxError'?'One of the JSON fields is invalid.':(err.message||'Could not save booking text.'),'error'); }
+  }
+
+  async function saveBookingRule(e) {
+    e.preventDefault();
+    var start=$('booking-rule-start').value;
+    var end=$('booking-rule-end').value;
+    if(!start || !end){message('Please choose both a start and end date/time.','error');return;}
+    // datetime-local values are local wall-clock values. Compare their
+    // components directly, then store the exact same components.
+    if(end <= start){
+      message('The end date/time must be after the start date/time.','error');return;
+    }
+    var payload={
+      starts_at:localInputToStorage(start),
+      ends_at:localInputToStorage(end)
+    };
+    try {
+      if(bookingConfigState.editingRuleId) await window.salonDatabase.updateBookingScheduleRule(bookingConfigState.editingRuleId,payload);
+      else await window.salonDatabase.createBookingScheduleRule(payload);
+      $('booking-rule-form-card').classList.add('crm-hidden');
+      bookingConfigState.editingRuleId=null;
+      await loadBookingConfig(); message('Booking block saved.','success');
+    } catch(err){console.error(err);message(err.message||'Could not save booking block.','error');}
+  }
+
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var save=$('booking-settings-form'); if(save)save.addEventListener('submit',saveBookingSettings);
+    var text=$('booking-text-form'); if(text)text.addEventListener('submit',saveBookingText);
+    var refresh=$('booking-config-refresh'); if(refresh)refresh.addEventListener('click',function(){loadBookingConfig().catch(function(e){message(e.message||'Could not load booking configuration.','error');});});
+    var add=$('new-booking-rule'); if(add)add.addEventListener('click',function(){openBookingRuleForm(null);});
+    var cancel=$('cancel-booking-rule'); if(cancel)cancel.addEventListener('click',function(){$('booking-rule-form-card').classList.add('crm-hidden');bookingConfigState.editingRuleId=null;});
+    var form=$('booking-rule-form'); if(form)form.addEventListener('submit',saveBookingRule);
+    var startInput=$('booking-rule-start');
+    var endInput=$('booking-rule-end');
+    if(startInput && endInput){
+      startInput.addEventListener('change',function(){
+        if(startInput.value) endInput.min=startInput.value;
+        if(endInput.value && endInput.value<=startInput.value) endInput.value='';
+      });
+    }
+    document.querySelectorAll('[data-view="booking-config"]').forEach(function(btn){btn.addEventListener('click',function(){loadBookingConfig().catch(function(e){console.error(e);message(e.message||'Could not load booking configuration.','error');});});});
+  });
+
 })();

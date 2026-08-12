@@ -51,6 +51,7 @@
           <button class="crm-nav-item" data-view="vouchers"><span>◇</span> Vouchers</button>
           <button class="crm-nav-item" data-view="faqs" data-admin-only><span>?</span> FAQs</button>
           <button class="crm-nav-item" data-view="bookings"><span>◷</span> Bookings</button>
+          <button class="crm-nav-item" data-view="booking-config" data-admin-only><span>⚙</span> Booking Setup</button>
           <button class="crm-nav-item" data-view="customers"><span>♙</span> Customers</button>
 <button type="button" class="crm-nav-item" data-view="settings" data-admin-only><span class="crm-nav-icon">⚙</span><span>Settings</span></button>
           <button class="crm-nav-item" data-view="users"><span>♙</span> Users & Access</button>
@@ -382,6 +383,116 @@
         </div>
 
         
+
+        <section id="view-booking-config" class="crm-view crm-hidden" data-admin-only>
+          <div class="crm-page-heading">
+            <div>
+              <div class="crm-section-label">Booking</div>
+              <h2>Booking Setup</h2>
+              <p>Manage the schedule and content used by the public booking flow.</p>
+            </div>
+            <button id="booking-config-refresh" type="button" class="crm-btn crm-btn-secondary">↻ Refresh</button>
+          </div>
+
+          <div class="crm-grid">
+            <div class="crm-card">
+              <div class="crm-section-label">Schedule</div>
+              <h2>Booking settings</h2>
+              <form id="booking-settings-form" class="crm-standard-form">
+                <div class="crm-form-grid">
+                  <div class="crm-field">
+                    <label for="booking-slot-minutes">Slot duration</label>
+                    <input id="booking-slot-minutes" type="number" min="1" step="1" value="30">
+                    <small class="crm-small">Minutes used when generating available time slots.</small>
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-advance-months">Booking window</label>
+                    <input id="booking-advance-months" type="number" min="1" step="1" value="3">
+                    <small class="crm-small">How many months ahead customers can book.</small>
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-opening-time">Opening time</label>
+                    <input id="booking-opening-time" type="time" value="09:00">
+                  </div>
+                  <div class="crm-field">
+                    <label for="booking-closing-time">Closing time</label>
+                    <input id="booking-closing-time" type="time" value="18:00">
+                  </div>
+                </div>
+                <div class="crm-form-actions">
+                  <button type="submit" class="crm-btn crm-btn-primary">Save booking settings</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="crm-card">
+              <div class="crm-card-head">
+                <div>
+                  <div class="crm-section-label">Booking calendar blocks</div>
+                  <h2>Closures & blocked times</h2>
+                  <p class="crm-small">Use the calendar to choose an exact start and end date/time. This replaces the old month/weekday rule system.</p>
+                </div>
+                <button id="new-booking-rule" type="button" class="crm-btn crm-btn-primary">+ Add block</button>
+              </div>
+
+              <div id="booking-rule-form-card" class="crm-card crm-hidden" style="margin:16px 0 0;">
+                <div class="crm-section-label">Calendar block</div>
+                <h3 id="booking-rule-form-title">Add booking block</h3>
+                <form id="booking-rule-form" class="crm-standard-form">
+                  <div class="crm-form-grid">
+                    <div class="crm-field">
+                      <label for="booking-rule-start">From</label>
+                      <input id="booking-rule-start" type="datetime-local" required>
+                      <small class="crm-small">Start date and time.</small>
+                    </div>
+                    <div class="crm-field">
+                      <label for="booking-rule-end">To</label>
+                      <input id="booking-rule-end" type="datetime-local" required>
+                      <small class="crm-small">End date and time. The end must be after the start.</small>
+                    </div>
+                  </div>
+                  <div class="crm-form-actions">
+                    <button type="submit" class="crm-btn crm-btn-primary">Save block</button>
+                    <button id="cancel-booking-rule" type="button" class="crm-btn crm-btn-secondary">Cancel</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="crm-table-wrap" style="margin-top:16px;">
+                <table class="crm-table">
+                  <thead><tr><th>From → To</th><th></th></tr></thead>
+                  <tbody id="booking-rules-body"><tr><td colspan="5" class="crm-empty">Loading…</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="crm-card" style="margin-top:20px;">
+            <div class="crm-section-label">Public booking copy</div>
+            <h2>Booking page text</h2>
+            <p class="crm-small">Edit the multilingual messages used by the booking flow. Values must be valid JSON.</p>
+            <form id="booking-text-form" class="crm-standard-form">
+              <div class="crm-form-grid">
+                <div class="crm-field" style="grid-column:1/-1;">
+                  <label for="booking-messages-json">Messages</label>
+                  <textarea id="booking-messages-json" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="crm-field">
+                  <label for="booking-date-text-json">Date & time text</label>
+                  <textarea id="booking-date-text-json" rows="7" spellcheck="false"></textarea>
+                </div>
+                <div class="crm-field">
+                  <label for="booking-review-text-json">Review text</label>
+                  <textarea id="booking-review-text-json" rows="7" spellcheck="false"></textarea>
+                </div>
+              </div>
+              <div class="crm-form-actions">
+                <button type="submit" class="crm-btn crm-btn-primary">Save booking text</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
 <section id="view-settings" class="crm-view crm-hidden" data-admin-only>
   <div class="crm-settings-shell">
     <div class="crm-settings-intro">
@@ -518,6 +629,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=faq-crm-1"></script>
+  <script src="assets/js/crm/admin-crm.js?v=booking-calendar-v3"></script>
 </body>
 </html>
