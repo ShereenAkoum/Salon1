@@ -462,6 +462,147 @@
     return row.setting_value;
   }
 
+  function normalizeBrandingImage(value, key) {
+    var result = value;
+    if (typeof result === 'string') {
+      try { result = JSON.parse(result); } catch (e) { result = null; }
+    }
+    if (!result || typeof result !== 'object' || Array.isArray(result) || !result.url || !result.width || !result.height) {
+      throw new Error('Supabase application setting "' + key + '" is missing or invalid.');
+    }
+    return {
+      path: String(result.path || ''),
+      url: String(result.url),
+      width: String(result.width),
+      height: String(result.height)
+    };
+  }
+
+  function imageSettingPayload(key) {
+    var value = settingValue(key, null);
+    return normalizeBrandingImage(value, key);
+  }
+
+  function optionalImageSettingPayload(key) {
+    var value = settingValue(key, null);
+    if (!value) return null;
+    try {
+      var parsed = normalizeBrandingImage(value, key);
+      return parsed.url ? parsed : null;
+    } catch (e) { return null; }
+  }
+
+  function brandingDefaultPayload(key) {
+    var defaultKey = key + '_default';
+    var row = state.appSettings.find(function(x){ return x.setting_key === defaultKey; });
+    if (!row) throw new Error('Supabase application setting "' + defaultKey + '" is missing.');
+    return normalizeBrandingImage(row.setting_value, defaultKey);
+  }
+
+  function renderBrandingSettings() {
+    var header = imageSettingPayload('header_image');
+    var banner = imageSettingPayload('banner_image');
+    var favicon = optionalImageSettingPayload('favicon_image');
+    var headerPreview = $('header-image-preview');
+    if (headerPreview) {
+      headerPreview.src = header.url;
+      headerPreview.style.width = header.width;
+      headerPreview.style.height = header.height;
+      headerPreview.onerror = function(){ headerPreview.removeAttribute('src'); headerPreview.hidden = true; };
+    }
+    var bannerPreview = $('banner-image-preview');
+    if (bannerPreview) {
+      bannerPreview.style.backgroundImage = 'url("' + String(banner.url).replace(/"/g, '\\"') + '")';
+      bannerPreview.style.width = banner.width;
+      bannerPreview.style.minHeight = banner.height;
+    }
+    if ($('header-image-width')) $('header-image-width').value = header.width;
+    if ($('header-image-height')) $('header-image-height').value = header.height;
+    if ($('banner-image-width')) $('banner-image-width').value = banner.width;
+    if ($('banner-image-height')) $('banner-image-height').value = banner.height;
+    var faviconPreview = $('favicon-image-preview');
+    if (faviconPreview) {
+      if (favicon && favicon.url) { faviconPreview.src = favicon.url; faviconPreview.hidden = false; }
+      else { faviconPreview.removeAttribute('src'); faviconPreview.hidden = true; }
+      faviconPreview.onerror = function(){ faviconPreview.removeAttribute('src'); faviconPreview.hidden = true; };
+    }
+    document.querySelectorAll('.crm-welcome').forEach(function(hero){
+      hero.style.backgroundImage = 'linear-gradient(120deg, rgba(48,40,36,.82), rgba(87,70,62,.72)), url("' + String(banner.url).replace(/"/g, '\\"') + '")';
+      hero.style.backgroundSize = 'cover';
+      hero.style.backgroundPosition = 'center';
+    });
+  }
+
+  function validateCssSize(value, label, fallback) {
+    value = String(value || '').trim();
+    if (!value) return fallback;
+    if (!/^(?:\d+(?:\.\d+)?)(?:px|%|vw|vh|rem|em|auto)$/.test(value)) {
+      throw new Error(label + ' must be a valid CSS size such as 125px, 100%, or 20.833vw.');
+    }
+    return value;
+  }
+
+  async function persistBrandingSetting(key, payload) {
+    var result = await window.salonSupabase.from('application_settings').upsert({
+      setting_key: key,
+      setting_value: payload,
+      description: key === 'header_image' ? 'Website header image and display dimensions.' : 'Website page banner image and display dimensions.',
+      active: true,
+      updated_at: new Date().toISOString()
+    }, {onConflict:'setting_key'});
+    if (result.error) throw result.error;
+    await loadApplicationSettings();
+  }
+
+  async function uploadBrandingImage(key, fileInputId, maxMb) {
+    if (!requirePermission('settings','update')) return;
+    var input = $(fileInputId);
+    var file = input && input.files ? input.files[0] : null;
+    if (!file) { message('Choose an image first.','error'); return; }
+    if (!/^image\//i.test(file.type)) { message('Please choose an image file.','error'); return; }
+    maxMb = Number(maxMb || 5);
+    if (file.size > maxMb * 1024 * 1024) { message('Image must be ' + maxMb + ' MB or smaller.','error'); return; }
+
+    var ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+    if (!/^(jpg|jpeg|png|webp|gif|ico)$/.test(ext)) ext = 'jpg';
+    var path = 'branding/' + key.replace('_image','') + '-' + Date.now() + '-' + Math.random().toString(36).slice(2,8) + '.' + ext;
+    var old = key === 'favicon_image' ? (optionalImageSettingPayload(key) || {path:'',url:'',width:'32px',height:'32px'}) : imageSettingPayload(key);
+    var upload = await window.salonSupabase.storage.from('site-assets').upload(path, file, {upsert:false, contentType:file.type || undefined});
+    if (upload.error) throw upload.error;
+    var publicUrlResult = window.salonSupabase.storage.from('site-assets').getPublicUrl(path);
+    var publicUrl = publicUrlResult && publicUrlResult.data ? publicUrlResult.data.publicUrl : '';
+    if (!publicUrl) throw new Error('Could not create a public URL for the uploaded image.');
+
+    try {
+      await persistBrandingSetting(key, {path:path, url:publicUrl, width:old.width, height:old.height});
+    } catch (err) {
+      await window.salonSupabase.storage.from('site-assets').remove([path]);
+      throw err;
+    }
+    if (old.path && old.path.indexOf('branding/') === 0) {
+      await window.salonSupabase.storage.from('site-assets').remove([old.path]);
+    }
+    if (input) input.value = '';
+    message(key === 'header_image' ? 'Header image uploaded.' : (key === 'banner_image' ? 'Page banner image uploaded.' : 'Favicon uploaded.'),'success');
+  }
+
+  async function deleteBrandingImage(key) {
+    if (!requirePermission('settings','update')) return;
+    var current = key === 'favicon_image' ? (optionalImageSettingPayload(key) || {path:'',url:'',width:'32px',height:'32px'}) : imageSettingPayload(key);
+    if (current.path && current.path.indexOf('branding/') === 0) {
+      var remove = await window.salonSupabase.storage.from('site-assets').remove([current.path]);
+      if (remove.error) throw remove.error;
+    }
+    if (key === 'favicon_image') {
+      await persistBrandingSetting(key, {path:'',url:'',width:'32px',height:'32px'});
+      message('Favicon deleted.','success');
+      return;
+    }
+    await persistBrandingSetting(key, brandingDefaultPayload(key));
+    message((key === 'header_image' ? 'Header image' : 'Page banner image') + ' restored to the default image.','success');
+  }
+
+
   function normalizeCurrencyOptions(value) {
     var options = value;
     if (typeof options === 'string') {
@@ -603,6 +744,14 @@
     renderApplicationSettings();
   }
 
+  function applyCrmWebsiteName(websiteName) {
+    var name = String(websiteName || '').trim();
+    if (!name) return;
+    var brand = $('crm-sidebar-website-name');
+    if (brand) brand.textContent = name;
+    document.title = name + ' — CRM';
+  }
+
   function renderApplicationSettings() {
     var currency = settingValue('display_currency', 'USD');
     var options = normalizeCurrencyOptions(settingValue('currency_options', {
@@ -610,6 +759,7 @@
       QAR: {en:'QAR', ar:'ريال'}
     }));
     var language = settingValue('default_language', 'en');
+    var websiteName = settingValue('website_name', '');
     var contactPhone = settingValue('contact_phone', '+1 234 567 890');
 
     var currencySelect = $('app-setting-currency');
@@ -624,10 +774,14 @@
       if (!currencySelect.value && codes.length) currencySelect.value = codes[0];
     }
     if (languageSelect) languageSelect.value = String(language || 'en').toLowerCase();
+    var websiteNameInput = $('app-setting-website-name');
+    if (websiteNameInput) websiteNameInput.value = String(websiteName || '').trim();
+    applyCrmWebsiteName(websiteName);
     var phoneInput = $('app-setting-contact-phone');
     if (phoneInput) phoneInput.value = String(contactPhone || '').trim();
 
     renderCurrencyOptions(options);
+    renderBrandingSettings();
 
     var status = $('app-settings-status');
     if (status) status.textContent = 'Synced with Supabase';
@@ -644,11 +798,28 @@
 
     var currency = $('app-setting-currency').value.trim().toUpperCase();
     var language = $('app-setting-language').value.trim().toLowerCase();
+    var websiteName = $('app-setting-website-name').value.trim();
     var contactPhone = $('app-setting-contact-phone').value.trim();
     var options;
+    var headerImage;
+    var bannerImage;
+    var faviconImage;
 
-    if (!currency || !language || !contactPhone) {
-      message('Please complete the currency, language and contact phone settings.','error');
+    try {
+      headerImage = imageSettingPayload('header_image');
+      bannerImage = imageSettingPayload('banner_image');
+      faviconImage = optionalImageSettingPayload('favicon_image') || {path:'',url:'',width:'32px',height:'32px'};
+      headerImage.width = validateCssSize($('header-image-width').value, 'Header width', headerImage.width);
+      headerImage.height = validateCssSize($('header-image-height').value, 'Header height', headerImage.height);
+      bannerImage.width = validateCssSize($('banner-image-width').value, 'Banner width', bannerImage.width);
+      bannerImage.height = validateCssSize($('banner-image-height').value, 'Banner height', bannerImage.height);
+    } catch (err) {
+      message(err.message,'error');
+      return;
+    }
+
+    if (!currency || !language || !websiteName || !contactPhone) {
+      message('Please complete the website name, currency, language and contact phone settings.','error');
       return;
     }
     if (language !== 'en' && language !== 'ar') {
@@ -669,10 +840,14 @@
     }
 
     var settings = [
+      {key:'website_name', value:websiteName, description:'Public website name used across the website and browser title.'},
       {key:'display_currency', value:currency, description:'Default website display currency.'},
       {key:'currency_options', value:options, description:'Currency labels by currency and language.'},
       {key:'default_language', value:language, description:'Default website language for new visitors.'},
-      {key:'contact_phone', value:contactPhone, description:'Public contact phone number used across the website.'}
+      {key:'contact_phone', value:contactPhone, description:'Public contact phone number used across the website.'},
+      {key:'header_image', value:headerImage, description:'Website header image and display dimensions.'},
+      {key:'banner_image', value:bannerImage, description:'Website page banner image and display dimensions.'},
+      {key:'favicon_image', value:faviconImage, description:'Website favicon shown in the browser tab.'}
     ];
 
     var button = $('save-application-settings');
@@ -2294,7 +2469,7 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
+    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);$('upload-header-image').addEventListener('click',function(){uploadBrandingImage('header_image','header-image-file').catch(function(e){message(e.message,'error');});});$('delete-header-image').addEventListener('click',function(){deleteBrandingImage('header_image').catch(function(e){message(e.message,'error');});});$('upload-banner-image').addEventListener('click',function(){uploadBrandingImage('banner_image','banner-image-file').catch(function(e){message(e.message,'error');});});$('delete-banner-image').addEventListener('click',function(){deleteBrandingImage('banner_image').catch(function(e){message(e.message,'error');});});$('upload-favicon-image').addEventListener('click',function(){uploadBrandingImage('favicon_image','favicon-image-file',2).catch(function(e){message(e.message,'error');});});$('delete-favicon-image').addEventListener('click',function(){deleteBrandingImage('favicon_image').catch(function(e){message(e.message,'error');});});
     $('user-form').addEventListener('submit',inviteUser);$('user-cancel').addEventListener('click',function(){$('user-form-card').classList.add('crm-hidden');});
     $('user-edit-form').addEventListener('submit',saveUser);$('user-edit-cancel').addEventListener('click',function(){$('user-edit-card').classList.add('crm-hidden');state.editingUserId=null;});
     var tempGenerate=$('generate-temporary-password'); if(tempGenerate) tempGenerate.addEventListener('click',generateTemporaryPassword); var tempSet=$('set-temporary-password'); if(tempSet) tempSet.addEventListener('click',setTemporaryPassword);

@@ -1,4 +1,7 @@
+// CRM INVITE FUNCTION v4 - role-permission authorization
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Uses the authenticated caller for permission checks and the service-role client only for Auth/admin operations.
+// No legacy "Administrator access required" check.
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -122,12 +125,16 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status =
+      message.includes("permission") || message.includes("Not authenticated")
+        ? (message.includes("Not authenticated") ? 401 : 403)
+        : 400;
+
     return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : String(error),
-      }),
+      JSON.stringify({ error: message }),
       {
-        status: 400,
+        status,
         headers: { ...cors, "Content-Type": "application/json" },
       }
     );

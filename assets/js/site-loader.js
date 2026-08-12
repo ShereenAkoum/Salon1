@@ -108,6 +108,15 @@
       .then(data => {
         document.getElementById("page-header").innerHTML = data;
 
+        // application-settings.js loads before site-loader.js. Re-apply the
+        // branding after dynamic header injection so any future header image
+        // setting is reflected immediately on every non-homepage page.
+        if (window.getApplicationSettings && window.applyApplicationBranding) {
+          window.getApplicationSettings().then(function (settings) {
+            window.applyApplicationBranding(settings);
+          }).catch(function () {});
+        }
+
         return fetch("site-navigation.html");
       })
       .then(response => response.text())

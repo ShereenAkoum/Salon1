@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Salon Studio — CRM</title>
+  <title>CRM</title>
   <link rel="stylesheet" href="assets/css/style.css">
   <link rel="stylesheet" href="assets/css/admin-crm.css">
 </head>
@@ -45,7 +45,7 @@
   <main id="crm-app" class="crm-hidden">
     <div class="crm-layout">
       <aside class="crm-sidebar" id="crm-sidebar">
-        <div class="crm-side-brand"><div class="crm-brand-mark">S</div><div><strong>Salon Studio</strong><span>Management</span></div></div>
+        <div class="crm-side-brand"><div class="crm-brand-mark">S</div><div><strong id="crm-sidebar-website-name">Loading…</strong><span>Management</span></div></div>
         <nav class="crm-nav">
           <button class="crm-nav-item active" data-view="dashboard"><span>⌂</span> Dashboard</button>
           <button class="crm-nav-item" data-view="services"><span>✂</span> Services</button>
@@ -572,6 +572,11 @@
               <small>Used only when the visitor has no saved language preference.</small>
             </div>
             <div class="crm-field">
+              <label for="app-setting-website-name">Website name</label>
+              <input id="app-setting-website-name" type="text" placeholder="Your website name" autocomplete="organization" maxlength="120">
+              <small>Displayed across the public website and used for the browser page title.</small>
+            </div>
+            <div class="crm-field">
               <label for="app-setting-contact-phone">Contact phone number</label>
               <input id="app-setting-contact-phone" type="tel" placeholder="+1 234 567 890" autocomplete="tel">
               <small>Used for the website contact section and the navigation phone link.</small>
@@ -591,6 +596,92 @@
 
           <div id="currency-options-list" class="crm-currency-list"></div>
           <div class="crm-settings-help">Tip: keep the currency code short, such as <strong>USD</strong> or <strong>QAR</strong>.</div>
+        </div>
+
+        <div class="crm-card crm-settings-card crm-branding-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Website branding</div>
+              <h3>Header image</h3>
+              <p>Upload the logo shown in the website header. You can change its displayed width and height.</p>
+            </div>
+          </div>
+          <div class="crm-branding-editor">
+            <div class="crm-branding-preview" id="header-image-preview-wrap">
+              <img id="header-image-preview" alt="Header image preview">
+            </div>
+            <div class="crm-branding-controls">
+              <div class="crm-field">
+                <label for="header-image-file">Upload image</label>
+                <input id="header-image-file" type="file" accept="image/*">
+                <small>JPG, PNG, WEBP or GIF. Maximum 5 MB.</small>
+              </div>
+              <div class="crm-form-grid crm-branding-size-grid">
+                <div class="crm-field"><label for="header-image-width">Width</label><input id="header-image-width" type="text" placeholder="125px"></div>
+                <div class="crm-field"><label for="header-image-height">Height</label><input id="header-image-height" type="text" placeholder="100px"></div>
+              </div>
+              <div class="crm-branding-actions">
+                <button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-header-image">Upload / Replace</button>
+                <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="delete-header-image">Delete image</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-card crm-settings-card crm-branding-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Browser branding</div>
+              <h3>Favicon</h3>
+              <p>Upload the small icon shown in the browser tab for your website.</p>
+            </div>
+          </div>
+          <div class="crm-branding-editor crm-favicon-editor">
+            <div class="crm-branding-preview crm-favicon-preview" id="favicon-image-preview-wrap">
+              <img id="favicon-image-preview" alt="Favicon preview">
+            </div>
+            <div class="crm-branding-controls">
+              <div class="crm-field">
+                <label for="favicon-image-file">Upload favicon</label>
+                <input id="favicon-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/x-icon,image/vnd.microsoft.icon">
+                <small>PNG, ICO, JPG or WEBP. A square image is recommended. Maximum 2 MB.</small>
+              </div>
+              <div class="crm-branding-actions">
+                <button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-favicon-image">Upload / Replace</button>
+                <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="delete-favicon-image">Delete favicon</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-card crm-settings-card crm-branding-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Website branding</div>
+              <h3>Page banner image</h3>
+              <p>Control the background image used by the page-title banner across Services, Vouchers, About and FAQ.</p>
+            </div>
+          </div>
+          <div class="crm-branding-editor">
+            <div class="crm-branding-preview crm-banner-preview" id="banner-image-preview-wrap">
+              <div id="banner-image-preview" aria-label="Page banner preview"></div>
+            </div>
+            <div class="crm-branding-controls">
+              <div class="crm-field">
+                <label for="banner-image-file">Upload image</label>
+                <input id="banner-image-file" type="file" accept="image/*">
+                <small>JPG, PNG, WEBP or GIF. Maximum 5 MB.</small>
+              </div>
+              <div class="crm-form-grid crm-branding-size-grid">
+                <div class="crm-field"><label for="banner-image-width">Width</label><input id="banner-image-width" type="text" placeholder="100%"></div>
+                <div class="crm-field"><label for="banner-image-height">Height</label><input id="banner-image-height" type="text" placeholder="20.833vw"></div>
+              </div>
+              <div class="crm-branding-actions">
+                <button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-banner-image">Upload / Replace</button>
+                <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="delete-banner-image">Delete image</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -738,6 +829,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=crm-v14"></script>
+  <script src="assets/js/crm/admin-crm.js?v=crm-v20"></script>
 </body>
 </html>
