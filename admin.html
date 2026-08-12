@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html class="crm-auth-pending" lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="assets/css/admin-crm.css">
 </head>
 <body class="crm-page">
+  <div id="crm-toast" class="crm-toast" aria-live="polite" aria-atomic="true"></div>
   <div id="crm-login" class="crm-login crm-card">
     <div class="crm-login-mark">S</div>
     <div class="crm-section-label">Salon management</div>
@@ -25,7 +26,7 @@
     <div class="crm-login-mark">✓</div>
     <div class="crm-section-label">Welcome to the salon CRM</div>
     <h1 id="password-setup-title" class="crm-title">Create your password</h1>
-    <p class="crm-subtitle">Your invitation is confirmed. Choose a password to finish setting up your CRM account.</p>
+    <p id="password-setup-subtitle" class="crm-subtitle">Your invitation is confirmed. Choose a password to finish setting up your CRM account.</p>
     <div id="password-setup-message" class="crm-message"></div>
     <form id="password-setup-form">
       <div class="crm-field">
@@ -37,7 +38,7 @@
         <label for="setup-password-confirm">Confirm password</label>
         <input id="setup-password-confirm" type="password" minlength="8" autocomplete="new-password" required>
       </div>
-      <button class="crm-btn crm-btn-primary crm-btn-wide" type="submit">Create password <span>→</span></button>
+      <button id="password-setup-submit" class="crm-btn crm-btn-primary crm-btn-wide" type="submit">Create password <span>→</span></button>
     </form>
   </section>
 
@@ -55,6 +56,7 @@
           <button class="crm-nav-item" data-view="customers"><span>♙</span> Customers</button>
 <button type="button" class="crm-nav-item" data-view="settings" data-admin-only><span class="crm-nav-icon">⚙</span><span>Settings</span></button>
           <button class="crm-nav-item" data-view="users"><span>♙</span> Users & Access</button>
+          <button class="crm-nav-item" data-view="roles"><span>♙</span> Roles & Permissions</button>
         </nav>
         <div class="crm-side-bottom">
           <a href="index.html" class="crm-nav-link">↗ View website</a>
@@ -92,7 +94,7 @@
         </section>
 
         <section id="view-services" class="crm-view crm-hidden">
-          <div class="crm-page-heading"><div><div class="crm-section-label">Catalog</div><h2>Services</h2><p>Manage categories and services shown on the public website.</p></div><button id="new-service-top" class="crm-btn crm-btn-primary">+ Add service</button></div>
+          <div class="crm-page-heading"><div><div class="crm-section-label">Catalog</div><h2>Services</h2><p>Manage categories and services shown on the public website.</p></div></div>
           <div class="crm-grid">
             <div class="crm-card">
               <div class="crm-section-label">Category</div><h2 id="category-form-title">Add Category</h2><p class="crm-small">Names, descriptions, image and display dimensions.</p>
@@ -107,7 +109,7 @@
             <div class="crm-card">
               <div class="crm-section-label">Service</div><h2 id="service-form-title">Add Service</h2><p class="crm-small">Use real USD/QAR prices. Duration can stay empty.</p>
               <form id="service-form" class="crm-standard-form"><div class="crm-form-grid">
-                <div class="crm-field"><label>Category</label><select id="service-category" required></select></div><div class="crm-field"><label>SKU</label><input id="service-sku" placeholder="HS-001"></div>
+                <div class="crm-field"><label>Category</label><select id="service-category" required></select></div><div class="crm-field"><label>SKU</label><input id="service-sku" placeholder="HS-001" required></div>
                 <div class="crm-field"><label>English name</label><input id="service-name-en" required></div><div class="crm-field"><label>Arabic name</label><input id="service-name-ar" required dir="rtl"></div>
                 <div class="crm-field"><label>English description</label><textarea id="service-description-en"></textarea></div><div class="crm-field"><label>Arabic description</label><textarea id="service-description-ar" dir="rtl"></textarea></div>
                 <div class="crm-field"><label>USD price</label><input id="service-price-usd" type="number" min="0" step="0.01"></div><div class="crm-field"><label>QAR price</label><input id="service-price-qar" type="number" min="0" step="0.01"></div>
@@ -135,9 +137,23 @@
             <div class="crm-section-label">Manage access</div><h2>Edit CRM user</h2><p class="crm-small" id="user-edit-email"></p>
             <form id="user-edit-form"><div class="crm-form-grid">
               <div class="crm-field"><label for="edit-user-name">Display name</label><input id="edit-user-name" required></div>
-              <div class="crm-field"><label for="edit-user-role">Role</label><select id="edit-user-role"><option value="manager">Manager</option><option value="staff">Staff</option><option value="admin">Administrator</option></select></div>
+              <div class="crm-field"><label for="edit-user-role">Role</label><select id="edit-user-role"></select></div>
               <label class="crm-field crm-check"><input id="edit-user-active" type="checkbox"> <span>Account active</span></label>
             </div><div class="crm-form-actions"><button id="user-edit-cancel" type="button" class="crm-btn crm-btn-secondary">Cancel</button><button type="submit" class="crm-btn crm-btn-primary">Save changes</button></div></form>
+            <div id="temporary-password-card" class="crm-subcard crm-hidden" style="margin-top:24px">
+              <div class="crm-section-label">Security</div>
+              <h3>Set temporary password</h3>
+              <p class="crm-small">Administrator only. The user will be required to choose a new password before entering the CRM.</p>
+              <div class="crm-form-grid">
+                <div class="crm-field"><label for="temporary-password">Temporary password</label><input id="temporary-password" type="password" minlength="8" autocomplete="new-password"></div>
+                <div class="crm-field"><label for="temporary-password-confirm">Confirm temporary password</label><input id="temporary-password-confirm" type="password" minlength="8" autocomplete="new-password"></div>
+              </div>
+              <div class="crm-form-actions">
+                <button id="generate-temporary-password" type="button" class="crm-btn crm-btn-secondary">Generate password</button>
+                <button id="set-temporary-password" type="button" class="crm-btn crm-btn-primary">Set temporary password</button>
+              </div>
+              <div id="temporary-password-message" class="crm-message"></div>
+            </div>
           </div>
         </section>
 
@@ -586,6 +602,71 @@
 </section>
 
 
+
+<section id="view-roles" class="crm-view crm-hidden">
+  <div class="crm-page-heading">
+    <div>
+      <div class="crm-section-label">Access control</div>
+      <h2>Roles &amp; Permissions</h2>
+      <p>Create roles and decide exactly which CRM sections they can read, create, update and delete.</p>
+    </div>
+    <button id="new-role-top" class="crm-btn crm-btn-primary" type="button">+ Create role</button>
+  </div>
+
+  <div id="role-form-card" class="crm-card crm-hidden">
+    <div class="crm-card-head">
+      <div>
+        <div class="crm-section-label">Role configuration</div>
+        <h2 id="role-form-title">Create role</h2>
+        <p class="crm-small">Choose the permissions this role should have. Write means Create, Update and Delete.</p>
+      </div>
+    </div>
+    <form id="role-form" class="crm-standard-form">
+      <div class="crm-form-grid">
+        <div class="crm-field">
+          <label for="role-name">Role name</label>
+          <input id="role-name" type="text" required maxlength="80" placeholder="e.g. Receptionist">
+        </div>
+        <div class="crm-field">
+          <label for="role-description">Description</label>
+          <input id="role-description" type="text" maxlength="200" placeholder="What this role is responsible for">
+        </div>
+      </div>
+
+      <div class="crm-role-permission-toolbar">
+        <div>
+          <strong>Permissions</strong>
+          <p class="crm-small">Read controls access to a section. Create, Update and Delete control the corresponding actions.</p>
+        </div>
+        <label class="crm-check">
+          <input id="role-select-all" type="checkbox">
+          <span>Select all</span>
+        </label>
+      </div>
+
+      <div id="role-permissions-grid" class="crm-role-permissions-grid"></div>
+
+      <div class="crm-form-actions">
+        <button id="role-cancel" type="button" class="crm-btn crm-btn-secondary">Cancel</button>
+        <button id="role-save" type="submit" class="crm-btn crm-btn-primary">Create role</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="crm-card">
+    <div class="crm-table-wrap">
+      <table class="crm-table">
+        <thead>
+          <tr><th>Role</th><th>Description</th><th>Type</th><th>Permissions</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="roles-table-body">
+          <tr><td colspan="5" class="crm-empty">Loading roles…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <section id="view-customers" class="crm-view crm-hidden">
   <div class="crm-toolbar">
     <div>
@@ -609,9 +690,9 @@
     <form id="customer-form" class="crm-standard-form">
       <div class="crm-form-grid">
         <div class="crm-field"><label for="customer-name">Name</label><input id="customer-name" required autocomplete="name"></div>
-        <div class="crm-field"><label for="customer-phone">Phone</label><input id="customer-phone" type="tel" autocomplete="tel"></div>
+        <div class="crm-field"><label for="customer-phone">Phone</label><input id="customer-phone" type="tel" inputmode="tel" pattern="\+?[0-9]+" autocomplete="tel" placeholder="+97450123456"></div>
         <div class="crm-field"><label for="customer-email">Email</label><input id="customer-email" type="email" autocomplete="email"></div>
-        <div class="crm-field full"><label for="customer-notes">Notes</label><textarea id="customer-notes" rows="3"></textarea></div>
+        <div class="crm-field full"><label for="customer-notes">Internal CRM notes</label><textarea id="customer-notes" rows="3" placeholder="Internal notes for CRM staff only"></textarea></div>
       </div>
       <div class="crm-actions-inline">
         <button type="submit" class="crm-btn crm-btn-primary">Save customer</button>
@@ -623,7 +704,7 @@
   <div class="crm-card">
     <div class="crm-table-wrap">
       <table class="crm-table">
-        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Internal CRM notes</th><th></th></tr></thead>
         <tbody id="customers-table-body"><tr><td colspan="5">Loading customers…</td></tr></tbody>
       </table>
     </div>
@@ -657,6 +738,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=confirmed-only-crm-2"></script>
+  <script src="assets/js/crm/admin-crm.js?v=crm-v14"></script>
 </body>
 </html>

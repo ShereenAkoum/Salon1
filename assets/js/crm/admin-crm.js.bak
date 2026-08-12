@@ -9,40 +9,12 @@
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
   }
-  var crmToastTimer = null;
-  function getToast() {
-    var toast = $('crm-toast');
-    if (toast) return toast;
-    toast = document.createElement('div');
-    toast.id = 'crm-toast';
-    toast.className = 'crm-toast';
-    toast.setAttribute('aria-live', 'polite');
-    toast.setAttribute('aria-atomic', 'true');
-    document.body.appendChild(toast);
-    return toast;
-  }
   function message(text, type) {
-    var toast = getToast();
-    var kind = type || 'success';
-    var safeText = escapeHtml(text == null ? '' : text);
-    var icon = kind === 'error' ? '!' : '✓';
-    var label = kind === 'error' ? 'Error' : 'Success';
-    var duration = kind === 'error' ? 6500 : 4000;
-    toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
-    toast.innerHTML = '<button type="button" class="crm-toast-close" aria-label="Dismiss notification">×</button>' +
-      '<div class="crm-toast-icon" aria-hidden="true">' + icon + '</div>' +
-      '<div class="crm-toast-content"><strong>' + label + '</strong><span>' + safeText + '</span></div>' +
-      '<div class="crm-toast-progress" aria-hidden="true"></div>';
-    toast.className = 'crm-toast show ' + kind;
-    toast.style.setProperty('--crm-toast-duration', duration + 'ms');
-    toast.querySelector('.crm-toast-close').addEventListener('click', clearMessage);
-    if (crmToastTimer) clearTimeout(crmToastTimer);
-    crmToastTimer = setTimeout(clearMessage, duration);
+    var el = $('app-message') || $('login-message');
+    if (!el) return;
+    el.textContent = text; el.className = 'crm-message show ' + (type || 'success');
   }
   function clearMessage() {
-    if (crmToastTimer) { clearTimeout(crmToastTimer); crmToastTimer = null; }
-    var toast = $('crm-toast');
-    if (toast) { toast.classList.remove('show'); }
     ['app-message','login-message'].forEach(function(id){ var el=$(id); if(el){el.textContent='';el.className='crm-message';} });
   }
   async function getCurrentRole() {
@@ -65,25 +37,9 @@
   }
 
   async function requireAdmin() {
-    // Use the same security-definer access function as the rest of the CRM.
-    // Do not query crm_roles directly here: RLS on the role catalogue can
-    // legitimately hide the row even though the authenticated user is allowed
-    // to access the CRM. The previous implementation treated that as an
-    // unauthorized login and immediately signed the user out.
-    try {
-      var result = await window.salonSupabase.rpc('crm_get_my_access');
-      if (result.error) throw result.error;
-      var access = result.data;
-      if (!access || !access.user_id || !access.role) return false;
-      state.currentRole = access.role;
-      state.currentUserId = access.user_id;
-      state.mustChangePassword = access.must_change_password === true;
-      return true;
-    } catch (err) {
-      console.error('CRM authorization check failed:', err);
-      message('Could not verify your CRM access. Please try again.', 'error');
-      return false;
-    }
+    var role = await getCurrentRole();
+    state.currentRole = role;
+    return !!role;
   }
 
   async function loadAccess() {
@@ -274,8 +230,7 @@
   async function loadCustomers() {
     var result = await window.salonSupabase
       .from('customers')
-      .select('id,name,phone,email,notes,created_at,is_deleted')
-      .eq('is_deleted', false)
+      .select('id,name,phone,email,notes,created_at')
       .order('id', {ascending:false});
     if (result.error) throw result.error;
     state.customers = result.data || [];
@@ -301,8 +256,7 @@
         '<td>'+escapeHtml(c.email||'—')+'</td>' +
         '<td>'+escapeHtml(c.notes||'—')+'</td>' +
         '<td><button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="viewCustomer('+Number(c.id)+')">View</button> ' +
-        (can('customers','update') ? '<button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="editCustomer('+Number(c.id)+')">Edit</button>' : '') +
-        (can('customers','delete') ? ' <button type="button" class="crm-btn crm-btn-danger crm-btn-sm" onclick="deleteCustomer('+Number(c.id)+')">Delete</button>' : '') + '</td>' +
+        (can('customers','update') ? '<button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="editCustomer('+Number(c.id)+')">Edit</button>' : '') + '</td>' +
         '</tr>';
     }).join('') || '<tr><td colspan="5" class="crm-empty">No customers found.</td></tr>';
   }
@@ -342,14 +296,10 @@
       name: $('customer-name').value.trim(),
       phone: $('customer-phone').value.trim() || null,
       email: $('customer-email').value.trim() || null,
-      notes: state.editingCustomerId ? ($('customer-notes').value.trim() || null) : null
+      notes: $('customer-notes').value.trim() || null
     };
     if (!payload.name) {
       message('Please enter the customer name.','error');
-      return;
-    }
-    if (payload.phone && !/^\+?[0-9]+$/.test(payload.phone)) {
-      message('Phone can contain only numbers, with an optional + at the beginning.','error');
       return;
     }
 
@@ -367,18 +317,6 @@
     message(state.editingCustomerId ? 'Customer updated.' : 'Customer added.','success');
     state.editingCustomerId = null;
     $('customer-form-card').classList.add('crm-hidden');
-    await loadCustomers();
-  }
-
-  async function deleteCustomer(id) {
-    if (!requirePermission('customers','delete','You do not have permission to delete customers.')) return;
-    var customer = state.customers.find(function(x){ return String(x.id) === String(id); });
-    if (!customer) return;
-    if (!window.confirm('Delete ' + (customer.name || 'this customer') + '? The customer will be hidden from the CRM, but their booking history will be preserved.')) return;
-    var result = await window.salonSupabase.rpc('crm_delete_customer', { p_id: Number(id) });
-    if (result.error) { message(result.error.message || 'Could not delete customer.','error'); return; }
-    if (state.selectedCustomerId && String(state.selectedCustomerId) === String(id)) closeCustomerDetails();
-    message('Customer deleted. Their booking history was preserved.','success');
     await loadCustomers();
   }
 
@@ -768,8 +706,8 @@
   function startFaqCreate() {
     resetFaqForm();
     $('faq-form-card').classList.remove('crm-hidden');
-    $('faq-form-card').scrollIntoView({behavior:'smooth', block:'center'});
-    window.setTimeout(function(){ $('faq-question-en').focus(); }, 350);
+    $('faq-question-en').focus();
+    window.scrollTo({top:0,behavior:'smooth'});
   }
 
   function editFaq(id) {
@@ -784,8 +722,8 @@
     $('faq-active').checked = f.active !== false;
     $('faq-form-title').textContent = 'Edit FAQ';
     $('faq-form-card').classList.remove('crm-hidden');
-    $('faq-form-card').scrollIntoView({behavior:'smooth', block:'center'});
-    window.setTimeout(function(){ $('faq-question-en').focus(); }, 350);
+    $('faq-question-en').focus();
+    window.scrollTo({top:0,behavior:'smooth'});
   }
 
   async function saveFaq(e) {
@@ -910,10 +848,7 @@
       return '<tr><td><strong>'+escapeHtml(c.name_en)+'</strong><br><span class="crm-small">'+escapeHtml(c.name_ar)+'</span></td>'+
       '<td>'+escapeHtml(c.image_url||'')+'</td><td>'+escapeHtml(c.image_width||'')+' × '+escapeHtml(c.image_height||'')+'</td>'+
       '<td>'+(c.active?'<span class="crm-badge active">Active</span>':'<span class="crm-badge inactive">Inactive</span>')+'</td>'+
-      '<td><div class="crm-row-actions">'+
-      (can('services','update')?'<button class="crm-btn crm-btn-secondary" data-edit-category="'+c.id+'">Edit</button>':'')+
-      (can('services','delete')?'<button class="crm-btn crm-btn-danger crm-btn-small" data-delete-category="'+c.id+'">Delete</button>':'')+
-      '</div></td></tr>';
+      '<td>'+(can('services','update')?'<button class="crm-btn crm-btn-secondary" data-edit-category="'+c.id+'">Edit</button>':'')+'</td></tr>';
     }).join('');
   }
   function renderServices() {
@@ -921,10 +856,7 @@
       return '<tr><td>'+escapeHtml(s.sku||'')+'</td><td><strong>'+escapeHtml(s.name_en)+'</strong><br><span class="crm-small">'+escapeHtml(s.name_ar)+'</span></td>'+
       '<td>'+escapeHtml(categoryName(s.category_id))+'</td><td class="crm-price">$'+escapeHtml(s.price_usd==null?'':s.price_usd)+'<br><span class="crm-price-muted">'+(s.price_qar==null?'—':escapeHtml(s.price_qar)+' QAR')+'</span></td>'+
       '<td>'+(s.duration_minutes==null?'—':escapeHtml(s.duration_minutes)+' min')+'</td><td>'+(s.active?'<span class="crm-badge active">Active</span>':'<span class="crm-badge inactive">Inactive</span>')+'</td>'+
-      '<td><div class="crm-row-actions">'+
-      (can('services','update')?'<button class="crm-btn crm-btn-secondary" data-edit-service="'+s.id+'">Edit</button>':'')+
-      (can('services','delete')?'<button class="crm-btn crm-btn-danger crm-btn-small" data-delete-service="'+s.id+'">Delete</button>':'')+
-      '</div></td></tr>';
+      '<td>'+(can('services','update')?'<button class="crm-btn crm-btn-secondary" data-edit-service="'+s.id+'">Edit</button>':'')+'</td></tr>';
     }).join('');
   }
   function voucherImageUrl(v) {
@@ -1118,25 +1050,27 @@
 
         saved = updateResult.data[0];
       } else {
-        // Voucher creation goes through the same permission-checked RPC path
-        // as edits/deletes. This avoids relying on a browser INSERT RLS policy
-        // and keeps custom CRM roles working correctly.
-        var insertResult = await window.salonSupabase.rpc('crm_create_voucher', {
-          p_sku: payload.sku,
-          p_title_en: payload.title_en,
-          p_title_ar: payload.title_ar,
-          p_price_usd: payload.price_usd,
-          p_price_qar: payload.price_qar,
-          p_duration_minutes: payload.duration_minutes,
-          p_active: payload.active
-        });
+        var insertResult = await window.salonSupabase
+          .from('vouchers')
+          .insert(payload);
 
         if (insertResult.error) throw insertResult.error;
-        if (!Array.isArray(insertResult.data) || !insertResult.data.length) {
-          throw new Error('The voucher could not be created.');
+
+        var fetchInserted = await window.salonSupabase
+          .from('vouchers')
+          .select('*')
+          .eq('sku', payload.sku)
+          .maybeSingle();
+
+        if (fetchInserted.error) throw fetchInserted.error;
+
+        if (!fetchInserted.data) {
+          throw new Error(
+            'The voucher was created, but the new row could not be read back. Check the CRM SELECT policy.'
+          );
         }
 
-        saved = insertResult.data[0];
+        saved = fetchInserted.data;
       }
       var oldImage = existing && existing.image_path ? existing.image_path : null;
 
@@ -1189,10 +1123,9 @@
   }
 
   async function loadVouchers() {
-    // The CRM must see both active and inactive vouchers. The public website
-    // intentionally sees only active vouchers, so the CRM uses a dedicated
-    // permission-checked RPC instead of the public/RLS SELECT path.
-    var result = await window.salonSupabase.rpc('crm_list_vouchers');
+    var result = await window.salonSupabase
+      .from('vouchers')
+      .select('*');
 
     if (result.error) throw result.error;
 
@@ -1264,12 +1197,15 @@
         catch (imageError) { console.warn('Could not delete voucher image:', imageError); }
       }
 
-      var result = await window.salonSupabase.rpc('crm_delete_voucher', {
-        p_id: id
-      });
+      var result = await window.salonSupabase
+        .from('vouchers')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
       if (result.error) throw result.error;
-      if (!Array.isArray(result.data) || !result.data.length) {
-        throw new Error('The voucher could not be deleted. It may no longer exist.');
+      if (!result.data) {
+        throw new Error('The voucher could not be deleted. Check the vouchers DELETE RLS policy.');
       }
 
       await loadVouchers();
@@ -1311,8 +1247,7 @@
       try{
         var customerResult=await window.salonSupabase
           .from('customers')
-          .select('id',{count:'exact',head:true})
-          .eq('is_deleted', false);
+          .select('id',{count:'exact',head:true});
         if(customerResult.error) throw customerResult.error;
         customerStat.textContent=String(customerResult.count||0);
       }catch(e){
@@ -1341,23 +1276,13 @@
     if(!requirePermission('services', state.editingServiceId?'update':'create')) return;
     e.preventDefault(); clearMessage();
     var usd=$('service-price-usd').value;
-    var sku=$('service-sku').value.trim();
-    var qar=$('service-price-qar').value;
-    var payload={category_id:Number($('service-category').value),sku:sku,name_en:$('service-name-en').value.trim(),name_ar:$('service-name-ar').value.trim(),
-      description_en:$('service-description-en').value.trim()||null,description_ar:$('service-description-ar').value.trim()||null,price:usd===''?(qar===''?0:Number(qar)):Number(usd),
-      price_usd:usd===''?null:Number(usd),price_qar:qar===''?null:Number(qar),
+    var payload={category_id:Number($('service-category').value),sku:$('service-sku').value.trim()||null,name_en:$('service-name-en').value.trim(),name_ar:$('service-name-ar').value.trim(),
+      description_en:$('service-description-en').value.trim()||null,description_ar:$('service-description-ar').value.trim()||null,price:usd===''?0:Number(usd),
+      price_usd:usd===''?null:Number(usd),price_qar:$('service-price-qar').value===''?null:Number($('service-price-qar').value),
       duration_minutes:$('service-duration').value===''?30:Number($('service-duration').value),sort_order:Number($('service-sort').value||0),active:$('service-active').checked};
-    if(!sku||!payload.name_en||!payload.name_ar||!payload.category_id){message('Please enter the SKU, English name, Arabic name and category.','error');return;}
-    if(usd==='' && qar===''){message('Enter at least one price: USD or QAR.','error');return;}
-    var duplicate=state.services.some(function(existing){return String(existing.id)!==String(state.editingServiceId||'') && String(existing.sku||'').trim().toLowerCase()===sku.toLowerCase();});
-    if(duplicate){message('This service SKU already exists. Please use a unique SKU.','error');return;}
+    if(!payload.name_en||!payload.name_ar||!payload.category_id){message('Please enter the English name, Arabic name and category.','error');return;}
     var result=state.editingServiceId?await window.salonSupabase.from('services').update(payload).eq('id',state.editingServiceId):await window.salonSupabase.from('services').insert(payload);
-    if(result.error){
-      var msg=result.error.message||'Could not save service.';
-      if(result.error.code==='23505') msg='This service SKU already exists. Please use a unique SKU.';
-      if(result.error.code==='23514') msg='Enter at least one price: USD or QAR.';
-      message(msg,'error');return;
-    } message(state.editingServiceId?'Service updated.':'Service added.','success');resetServiceForm();await loadData();
+    if(result.error){message(result.error.message,'error');return;} message(state.editingServiceId?'Service updated.':'Service added.','success');resetServiceForm();await loadData();
   }
   function editCategory(id){
     var c=state.categories.find(function(x){return String(x.id)===String(id);});if(!c)return;
@@ -1366,44 +1291,6 @@
     $('category-image').value=c.image_url||'';$('category-width').value=c.image_width==null?'':c.image_width;$('category-height').value=c.image_height==null?'':c.image_height;$('category-sort').value=c.sort_order||0;$('category-active').checked=c.active!==false;
     showView('services');window.scrollTo({top:0,behavior:'smooth'});
   }
-  async function deleteService(id){
-    if(!requirePermission('services','delete')) return;
-    var s=state.services.find(function(x){return String(x.id)===String(id);});
-    if(!s) return;
-    if(!window.confirm('Delete service "'+(s.name_en||s.sku||'this service')+'"? This cannot be undone.')) return;
-    try{
-      var refs=await window.salonSupabase.from('booking_services').select('id',{count:'exact',head:true}).eq('service_id',id);
-      if(refs.error) throw refs.error;
-      if((refs.count||0)>0){message('This service is already used in bookings. Delete is blocked; deactivate the service instead.','error');return;}
-      var result=await window.salonSupabase.from('services').delete().eq('id',id);
-      if(result.error) throw result.error;
-      message('Service deleted.','success');
-      await loadData();
-    }catch(err){
-      console.error('Could not delete service:',err);
-      message(err.message||'Could not delete service.','error');
-    }
-  }
-
-  async function deleteCategory(id){
-    if(!requirePermission('services','delete')) return;
-    var c=state.categories.find(function(x){return String(x.id)===String(id);});
-    if(!c) return;
-    if(!window.confirm('Delete category "'+(c.name_en||'this category')+'"? You must delete all services in this category first.')) return;
-    try{
-      var refs=await window.salonSupabase.from('services').select('id',{count:'exact',head:true}).eq('category_id',id);
-      if(refs.error) throw refs.error;
-      if((refs.count||0)>0){message('This category still contains services. Delete those services first, then delete the category.','error');return;}
-      var result=await window.salonSupabase.from('service_categories').delete().eq('id',id);
-      if(result.error) throw result.error;
-      message('Category deleted.','success');
-      await loadData();
-    }catch(err){
-      console.error('Could not delete category:',err);
-      message(err.message||'Could not delete category.','error');
-    }
-  }
-
   function resetCategoryForm(){
     applyRoleVisibility();state.editingCategoryId=null;$('category-form').reset();$('category-form-title').textContent='Add Category';$('category-save').textContent='Add Category';$('category-active').checked=true;}
   async function saveCategory(e){
@@ -1524,10 +1411,7 @@
             name: customer ? (customer.name || 'Customer') : 'Customer',
             phone: customer ? (customer.phone || '') : '',
             email: customer ? (customer.email || '') : '',
-            // Keep the public end-user booking comment separate from the
-            // customer's internal CRM notes.
-            notes: customer ? (customer.notes || '') : '',
-            bookingComment: row.customer_notes || ''
+            notes: row.customer_notes || (customer ? (customer.notes || '') : '')
           },
           items: items,
           created_at: row.created_at,
@@ -1925,8 +1809,7 @@
       '</div>' +
       '<div class="crm-detail-section"><div class="crm-section-label">Services</div>' + items + '</div>' +
       '<div class="crm-detail-total"><span>Total</span><strong>' + bookingMoney(b) + '</strong></div>' +
-      (b.bookingComment ? '<div class="crm-detail-section"><div class="crm-section-label">Customer comment</div><p class="crm-detail-notes">' + escapeHtml(b.bookingComment) + '</p></div>' : '') +
-      (c.notes ? '<div class="crm-detail-section"><div class="crm-section-label">Internal CRM notes</div><p class="crm-detail-notes">' + escapeHtml(c.notes) + '</p></div>' : '') +
+      (c.notes ? '<div class="crm-detail-section"><div class="crm-section-label">Customer notes</div><p class="crm-detail-notes">' + escapeHtml(c.notes) + '</p></div>' : '') +
       '<div class="crm-detail-actions">' + nextStatuses + '</div>';
     $('booking-detail-modal').classList.remove('crm-hidden');
     $('booking-detail-modal').setAttribute('aria-hidden','false');
@@ -2032,21 +1915,12 @@
     message('Booking ' + id + ' marked as ' + statusLabel(status) + '.', 'success');
   }
 
-  function viewStorageKey(userId) { return userId ? 'crm-current-view:' + String(userId) : null; }
-  function restoreLastView() {
-    var key = viewStorageKey(state.currentUserId);
-    var saved = key ? sessionStorage.getItem(key) : null;
-    if (saved && (saved === 'dashboard' || can(saved,'read'))) showView(saved, true);
-    else showView('dashboard', true);
-  }
-
-  function showView(view, restoring){
+  function showView(view){
     if(view!=='dashboard' && !can(view,'read')){
       message('You do not have permission to view this section.','error');
       return;
     }
     state.currentView=view;
-    if (!restoring) { var key = viewStorageKey(state.currentUserId); if (key) sessionStorage.setItem(key, view); }
     document.querySelectorAll('.crm-view').forEach(function(el){el.classList.add('crm-hidden');});
     var target=$('view-'+view); if(target)target.classList.remove('crm-hidden');
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-view')===view);});
@@ -2176,7 +2050,7 @@
     $('setup-password').focus();
   }
   function passwordSetupMessage(text,type){
-    message(text, type || 'success');
+    var el=$('password-setup-message');el.textContent=text;el.className='crm-message show '+(type||'success');
   }
   async function finishPasswordSetup(e){
     e.preventDefault();
@@ -2217,44 +2091,17 @@
       if(button){button.disabled=false;button.textContent='Create password →';}
     }
   }
-  function clearCrmSessionState() {
-    state.customers=[]; state.categories=[]; state.services=[]; state.vouchers=[]; state.users=[]; state.roles=[]; state.permissions=[]; state.access={}; state.rolePermissions=[]; state.bookings=[]; state.faqs=[]; state.faqSettings=null; state.currentRole=null; state.currentUserId=null; state.currentView='dashboard'; state.mustChangePassword=false;
-    document.querySelectorAll('.crm-view').forEach(function(el){ el.classList.add('crm-hidden'); });
-    var dashboard=$('view-dashboard'); if(dashboard) dashboard.classList.remove('crm-hidden');
-    document.querySelectorAll('.crm-nav-item').forEach(function(el){ el.classList.remove('active'); });
-    var dashNav=document.querySelector('.crm-nav-item[data-view="dashboard"]'); if(dashNav) dashNav.classList.add('active');
-  }
-  function showLogin(){ clearCrmSessionState(); $('crm-login').classList.remove('crm-hidden'); $('crm-app').classList.add('crm-hidden'); $('crm-password-setup').classList.add('crm-hidden'); }
-  async function signOut(){
-    var oldUserId=state.currentUserId;
-    if(oldUserId) sessionStorage.removeItem(viewStorageKey(oldUserId));
-    try { await window.salonSupabase.auth.signOut({scope:'global'}); } finally { window.location.replace(window.location.pathname); }
-  }
+  function showLogin(){ $('crm-login').classList.remove('crm-hidden');$('crm-app').classList.add('crm-hidden');}
+  async function signOut(){await window.salonSupabase.auth.signOut();showLogin();}
   async function login(e){
     e.preventDefault();clearMessage();
     var result=await window.salonSupabase.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
     if(result.error){message(result.error.message,'error');return;}
-
-    // Authentication succeeded. Now load the authorization record through the
-    // security-definer access RPC. This also gives us must_change_password.
-    // Never sign the user out merely because a direct crm_roles SELECT is
-    // blocked by RLS.
+    if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();message('This account is not authorized to access the salon CRM.','error');return;}
     state.currentUserId=result.data.user.id;
-    try {
-      await loadAccess();
-    } catch (err) {
-      console.error('CRM access load failed after login:', err);
-      message('You signed in, but the CRM could not load your access permissions. Please try again.', 'error');
-      return;
-    }
-
-    if(!state.currentRole){
-      await window.salonSupabase.auth.signOut();
-      message('This account is not authorized to access the salon CRM.','error');
-      return;
-    }
-
+    await loadAccess();
     if(state.mustChangePassword){ showPasswordSetup('forced'); return; }
+    showApp();
     $('current-user-email').textContent=result.data.user.email||'CRM user';
     await loadRoles();
     await loadData();
@@ -2262,9 +2109,6 @@
     if(can('settings','read')) await loadApplicationSettings();
     if(can('faqs','read')) await loadFaqs();
     if(can('bookings','read')) await loadBookings();
-    // Restore the user's last authorized view before the app becomes visible.
-    restoreLastView();
-    showApp();
   }
   function applyRoleVisibility(){
     // Navigation visibility is permission-based, but content visibility is
@@ -2283,7 +2127,7 @@
       el.classList.toggle('crm-hidden', !(allowed && active));
     });
     var actionMap={
-      'new-category-top':['services','create'],'new-voucher-top':['vouchers','create'],'new-faq-top':['faqs','create'],
+      'new-service-top':['services','create'],'new-category-top':['services','create'],'new-voucher-top':['vouchers','create'],'new-faq-top':['faqs','create'],
       'invite-user-btn':['users','create'],'new-role-top':['roles','create'],
       'service-save':['services',state.editingServiceId?'update':'create'],'category-save':['services',state.editingCategoryId?'update':'create'],
       'voucher-save':['vouchers',state.editingVoucherId?'update':'create'],'faq-save':['faqs',state.editingFaqId?'update':'create'],
@@ -2294,13 +2138,14 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
+    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);
     $('user-form').addEventListener('submit',inviteUser);$('user-cancel').addEventListener('click',function(){$('user-form-card').classList.add('crm-hidden');});
     $('user-edit-form').addEventListener('submit',saveUser);$('user-edit-cancel').addEventListener('click',function(){$('user-edit-card').classList.add('crm-hidden');state.editingUserId=null;});
     var tempGenerate=$('generate-temporary-password'); if(tempGenerate) tempGenerate.addEventListener('click',generateTemporaryPassword); var tempSet=$('set-temporary-password'); if(tempSet) tempSet.addEventListener('click',setTemporaryPassword);
     var roleForm=$('role-form'); if(roleForm) roleForm.addEventListener('submit',saveRole); var roleCancel=$('role-cancel'); if(roleCancel) roleCancel.addEventListener('click',function(){$('role-form-card').classList.add('crm-hidden');state.editingRoleId=null;}); var newRoleTop=$('new-role-top'); if(newRoleTop) newRoleTop.addEventListener('click',startRoleCreate); var rolesTableBody=$('roles-table-body'); if(rolesTableBody) rolesTableBody.addEventListener('click',function(e){var edit=e.target.closest('[data-edit-role]');if(edit)editRole(edit.getAttribute('data-edit-role'));var del=e.target.closest('[data-delete-role]');if(del)deleteRole(del.getAttribute('data-delete-role'));}); var roleSelectAll=$('role-select-all'); if(roleSelectAll) roleSelectAll.addEventListener('change',function(e){document.querySelectorAll('[data-role-permission]').forEach(function(c){c.checked=e.target.checked;});});
     $('password-setup-form').addEventListener('submit',finishPasswordSetup);
     $('invite-user-btn').addEventListener('click',function(){$('user-form-card').classList.remove('crm-hidden');$('user-name').focus();});
+    $('new-service-top').addEventListener('click',function(){resetServiceForm();showView('services');window.scrollTo({top:0,behavior:'smooth'});});
     $('service-reset').addEventListener('click',resetServiceForm);$('category-reset').addEventListener('click',resetCategoryForm);$('logout').addEventListener('click',signOut);
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view'));});});
     document.querySelectorAll('[data-view-target]').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view-target'));});});
@@ -2324,8 +2169,8 @@
     $('booking-schedule-grid').addEventListener('click',function(e){var b=e.target.closest('[data-view-booking]');if(b)renderBookingDetail(b.getAttribute('data-view-booking'));});
     document.addEventListener('keydown',function(e){if(e.key==='Escape')closeBookingDetail();});
 
-    $('service-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-service]');if(b)editService(b.getAttribute('data-edit-service'));var d=e.target.closest('[data-delete-service]');if(d)deleteService(d.getAttribute('data-delete-service'));});
-    $('category-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-category]');if(b)editCategory(b.getAttribute('data-edit-category'));var d=e.target.closest('[data-delete-category]');if(d)deleteCategory(d.getAttribute('data-delete-category'));}); $('users-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-user]');if(edit)editUser(edit.getAttribute('data-edit-user'));var toggle=e.target.closest('[data-toggle-user]');if(toggle)toggleUser(toggle.getAttribute('data-toggle-user'));});
+    $('service-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-service]');if(b)editService(b.getAttribute('data-edit-service'));});
+    $('category-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-category]');if(b)editCategory(b.getAttribute('data-edit-category'));}); $('users-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-user]');if(edit)editUser(edit.getAttribute('data-edit-user'));var toggle=e.target.closest('[data-toggle-user]');if(toggle)toggleUser(toggle.getAttribute('data-toggle-user'));});
     $('voucher-form').addEventListener('submit',saveVoucher);
     $('voucher-reset').addEventListener('click',resetVoucherForm);
     $('voucher-cancel').addEventListener('click',function(){$('voucher-form-card').classList.add('crm-hidden');state.editingVoucherId=null;});
@@ -2347,6 +2192,7 @@
         state.currentUserId=session&&session.user?session.user.id:null;
         await loadAccess();
         if(state.mustChangePassword){ showPasswordSetup('forced'); return; }
+        showApp();
         $('current-user-email').textContent=session&&session.user?session.user.email:'CRM user';
         await loadRoles();
         await loadData();
@@ -2354,22 +2200,14 @@
         if(can('settings','read')) await loadApplicationSettings();
         if(can('faqs','read')) await loadFaqs();
         if(can('bookings','read')) await loadBookings();
-        // Restore the user's last authorized view BEFORE revealing the CRM.
-        // This prevents a refresh from briefly showing the dashboard.
-        restoreLastView();
-        showApp();
       } else showLogin();
     } catch(e){console.error(e);showLogin();}
-    finally {
-      document.documentElement.classList.remove('crm-auth-pending');
-    }
 
     // Customer actions are called from admin.html inline handlers, so expose them
     // only after the customer functions have been created inside this scope.
     window.viewCustomer = viewCustomer;
     window.editCustomer = editCustomer;
     window.startCustomerCreate = startCustomerCreate;
-    window.deleteCustomer = deleteCustomer;
   });
   var bookingConfigState = { settings: null, rules: [], editingRuleId: null };
 
