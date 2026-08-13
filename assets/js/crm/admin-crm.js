@@ -813,6 +813,26 @@
     return options;
   }
 
+  function applyCrmFavicon() {
+    var favicon = optionalImageSettingPayload('favicon_image');
+    var old = document.querySelector('link[data-crm-favicon]');
+    if (old) old.remove();
+
+    // Keep the bootstrap icon in the document head so Chrome does not fall back
+    // to requesting /favicon.ico while the CRM settings are loading.
+    var bootstrap = document.querySelector('link[data-favicon-bootstrap]');
+    if (!favicon || !favicon.url) return;
+
+    var link = document.createElement('link');
+    link.rel = 'icon';
+    link.href = favicon.url + (favicon.url.indexOf('?') === -1 ? '?crm-favicon=' + Date.now() : '&crm-favicon=' + Date.now());
+    link.dataset.crmFavicon = 'true';
+    document.head.appendChild(link);
+
+    // Remove the bootstrap data URI once the real favicon is installed.
+    if (bootstrap) bootstrap.remove();
+  }
+
   async function loadApplicationSettings(ensureSocial) {
     var result = await window.salonSupabase
       .from('application_settings')
@@ -821,6 +841,7 @@
     if (result.error) throw result.error;
     state.appSettings = result.data || [];
     deactivateLegacySocialSettings();
+    applyCrmFavicon();
     renderApplicationSettings();
   }
 
@@ -965,14 +986,31 @@
       return;
     }
 
-    var socialSettings = SOCIAL_DEFAULTS.map(function(meta){
-      var existing = socialRow(meta.key);
-      var payload = socialPayloadFor(meta);
-      var urlInput = document.querySelector('[data-social-url="'+meta.key+'"]');
-      var activeInput = document.querySelector('[data-social-active="'+meta.key+'"]');
-      payload.url = urlInput ? urlInput.value.trim() : payload.url;
-      return {key:meta.key,value:{url:payload.url},description:meta.label+' social link.',active:!!(activeInput && activeInput.checked)};
-    });
+    var socialSettings;
+    try {
+      socialSettings = SOCIAL_DEFAULTS.map(function(meta){
+        var payload = socialPayloadFor(meta);
+        var urlInput = document.querySelector('[data-social-url="'+meta.key+'"]');
+        var activeInput = document.querySelector('[data-social-active="'+meta.key+'"]');
+        payload.url = urlInput ? urlInput.value.trim() : payload.url;
+        var active = !!(activeInput && activeInput.checked);
+
+        // An active social channel must have a real public URL. Without this,
+        // the public website intentionally hides the channel, which previously
+        // made the CRM checkbox look like it was working when nothing appeared.
+        if (active && !payload.url) {
+          throw new Error(meta.label + ' is marked active, but its Public URL is empty. Enter the public URL or turn off “Active — show on website”.');
+        }
+        if (active && !/^https?:\/\//i.test(payload.url)) {
+          throw new Error(meta.label + ' must use a public URL beginning with https:// or http://.');
+        }
+
+        return {key:meta.key,value:{url:payload.url},description:meta.label+' social link.',active:active};
+      });
+    } catch (err) {
+      message(err.message,'error');
+      return;
+    }
 
     var settings = [
       {key:'website_name', value:websiteName, description:'Public website name used across the website and browser title.'},

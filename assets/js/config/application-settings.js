@@ -114,8 +114,11 @@
       var row = settings[key];
       if (!row || row.active === false) return;
       var value = parseValue(row.setting_value);
-      if (!value || !value.url) return;
-      social[slug] = value;
+      if (!value || !String(value.url || '').trim()) {
+        console.warn('[Application settings] ' + slug + ' is active but has no public URL; the channel will remain hidden.');
+        return;
+      }
+      social[slug] = {url:String(value.url).trim()};
     });
     document.querySelectorAll('.site-social-link[data-social]').forEach(function(link) {
       var slug = link.getAttribute('data-social');

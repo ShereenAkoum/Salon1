@@ -1,5 +1,5 @@
 :root {
-  --color-primary: #16377c;
+  --color-primary: #2d1014;
   --color-secondary: #d01820;
   --color-tertiary: #014d55;
 }
@@ -165,7 +165,7 @@ html[lang="ar"] .box-contacts {
 }
 
 .logo-glow {
-  color: var(--color-secondary);
+  color: var(--color-primary);
   font-size: 28px;
 }
 
