@@ -103,7 +103,16 @@
               <form id="category-form" class="crm-standard-form"><div class="crm-form-grid">
                 <div class="crm-field"><label>English name</label><input id="category-name-en" required></div><div class="crm-field"><label>Arabic name</label><input id="category-name-ar" required dir="rtl"></div>
                 <div class="crm-field"><label>English description</label><textarea id="category-description-en"></textarea></div><div class="crm-field"><label>Arabic description</label><textarea id="category-description-ar" dir="rtl"></textarea></div>
-                <div class="crm-field full"><label>Image filename / path</label><input id="category-image" placeholder="hairStyles.png"></div>
+                <div class="crm-field full">
+                  <label for="category-image-file">Category image</label>
+                  <div class="crm-category-image-editor">
+                    <div class="crm-category-image-preview" id="category-image-preview-wrap"><img id="category-image-preview" alt="Category image preview" hidden></div>
+                    <div class="crm-category-image-controls">
+                      <input id="category-image-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif">
+                      <small>Choose an image. It will be uploaded to Supabase Storage when you save the category. Maximum 5 MB.</small>
+                    </div>
+                  </div>
+                </div>
                 <div class="crm-field"><label>Image width</label><input id="category-width" type="number" min="1"></div><div class="crm-field"><label>Image height</label><input id="category-height" type="number" min="1"></div>
                 <div class="crm-field"><label>Sort order</label><input id="category-sort" type="number" value="0"></div><label class="crm-check"><input id="category-active" type="checkbox" checked> Active</label>
               </div><div class="crm-form-actions"><button id="category-reset" type="button" class="crm-btn crm-btn-secondary">Clear</button><button id="category-save" type="submit" class="crm-btn crm-btn-primary">Add Category</button></div></form>

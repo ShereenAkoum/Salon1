@@ -1255,8 +1255,10 @@
 
   function renderCategories() {
     $('category-table-body').innerHTML=state.categories.map(function(c){
+      var image=c.image_url||'';
+      var imageHtml=image?'<div class="crm-category-thumb"><img src="'+escapeHtml(image)+'" alt="'+escapeHtml(c.name_en||'Category')+'" onerror="this.parentNode.style.display=&quot;none&quot;"></div>':'<span class="crm-small">No image</span>';
       return '<tr><td><strong>'+escapeHtml(c.name_en)+'</strong><br><span class="crm-small">'+escapeHtml(c.name_ar)+'</span></td>'+
-      '<td>'+escapeHtml(c.image_url||'')+'</td><td>'+escapeHtml(c.image_width||'')+' × '+escapeHtml(c.image_height||'')+'</td>'+
+      '<td>'+imageHtml+'</td><td>'+escapeHtml(c.image_width||'')+' × '+escapeHtml(c.image_height||'')+'</td>'+
       '<td>'+(c.active?'<span class="crm-badge active">Active</span>':'<span class="crm-badge inactive">Inactive</span>')+'</td>'+
       '<td><div class="crm-row-actions">'+
       (can('services','update')?'<button class="crm-btn crm-btn-secondary" data-edit-category="'+c.id+'">Edit</button>':'')+
@@ -1707,11 +1709,51 @@
       message(msg,'error');return;
     } message(state.editingServiceId?'Service updated.':'Service added.','success');resetServiceForm();await loadData();
   }
+  function renderCategoryImagePreview(url) {
+    var wrap=$('category-image-preview-wrap');
+    var img=$('category-image-preview');
+    if(!wrap||!img)return;
+    if(url){
+      img.src=url; img.hidden=false;
+      img.onerror=function(){img.removeAttribute('src');img.hidden=true;};
+    }else{
+      img.removeAttribute('src'); img.hidden=true;
+    }
+  }
+
+  function categoryStoragePathFromUrl(url) {
+    if(!url || !/^https?:\/\//i.test(String(url))) return '';
+    try {
+      var parsed=new URL(String(url));
+      var marker='/storage/v1/object/public/site-assets/';
+      var index=parsed.pathname.indexOf(marker);
+      return index===0 ? decodeURIComponent(parsed.pathname.slice(marker.length)) : '';
+    } catch(e) { return ''; }
+  }
+
+  async function uploadCategoryImage(file) {
+    if(!file) return null;
+    if(!/^image\//i.test(file.type)) throw new Error('Please choose an image file.');
+    if(file.size>5*1024*1024) throw new Error('Category image must be 5 MB or smaller.');
+    var ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(!/^(jpg|jpeg|png|webp|gif|avif)$/.test(ext)) ext='jpg';
+    var path='categories/category-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.'+ext;
+    var upload=await window.salonSupabase.storage.from('site-assets').upload(path,file,{upsert:false,contentType:file.type||undefined});
+    if(upload.error) throw upload.error;
+    var publicUrlResult=window.salonSupabase.storage.from('site-assets').getPublicUrl(path);
+    var publicUrl=publicUrlResult&&publicUrlResult.data?publicUrlResult.data.publicUrl:'';
+    if(!publicUrl){
+      await window.salonSupabase.storage.from('site-assets').remove([path]);
+      throw new Error('Could not create a public URL for the category image.');
+    }
+    return {path:path,url:publicUrl};
+  }
+
   function editCategory(id){
     var c=state.categories.find(function(x){return String(x.id)===String(id);});if(!c)return;
     state.editingCategoryId=c.id; applyRoleVisibility();$('category-form-title').textContent='Edit Category';$('category-save').textContent='Save Changes';
     $('category-name-en').value=c.name_en||'';$('category-name-ar').value=c.name_ar||'';$('category-description-en').value=c.description_en||'';$('category-description-ar').value=c.description_ar||'';
-    $('category-image').value=c.image_url||'';$('category-width').value=c.image_width==null?'':c.image_width;$('category-height').value=c.image_height==null?'':c.image_height;$('category-sort').value=c.sort_order||0;$('category-active').checked=c.active!==false;
+    $('category-image-file').value='';renderCategoryImagePreview(c.image_url||'');$('category-width').value=c.image_width==null?'':c.image_width;$('category-height').value=c.image_height==null?'':c.image_height;$('category-sort').value=c.sort_order||0;$('category-active').checked=c.active!==false;
     showView('services');window.scrollTo({top:0,behavior:'smooth'});
   }
   async function deleteService(id){
@@ -1753,15 +1795,43 @@
   }
 
   function resetCategoryForm(){
-    applyRoleVisibility();state.editingCategoryId=null;$('category-form').reset();$('category-form-title').textContent='Add Category';$('category-save').textContent='Add Category';$('category-active').checked=true;}
+    applyRoleVisibility();state.editingCategoryId=null;$('category-form').reset();$('category-form-title').textContent='Add Category';$('category-save').textContent='Add Category';$('category-active').checked=true;renderCategoryImagePreview('');
+  }
   async function saveCategory(e){
     if(!requirePermission('services', state.editingCategoryId?'update':'create')) return;
     e.preventDefault();clearMessage();
+    var editing=state.editingCategoryId?state.categories.find(function(x){return String(x.id)===String(state.editingCategoryId);}):null;
+    var fileInput=$('category-image-file');
+    var file=fileInput&&fileInput.files?fileInput.files[0]:null;
     var payload={name_en:$('category-name-en').value.trim(),name_ar:$('category-name-ar').value.trim(),description_en:$('category-description-en').value.trim()||null,description_ar:$('category-description-ar').value.trim()||null,
-      image_url:$('category-image').value.trim()||null,image_width:$('category-width').value===''?null:Number($('category-width').value),image_height:$('category-height').value===''?null:Number($('category-height').value),sort_order:Number($('category-sort').value||0),active:$('category-active').checked};
+      image_url:editing&&editing.image_url?editing.image_url:null,image_width:$('category-width').value===''?null:Number($('category-width').value),image_height:$('category-height').value===''?null:Number($('category-height').value),sort_order:Number($('category-sort').value||0),active:$('category-active').checked};
     if(!payload.name_en||!payload.name_ar){message('Please enter the English and Arabic category names.','error');return;}
-    var result=state.editingCategoryId?await window.salonSupabase.from('service_categories').update(payload).eq('id',state.editingCategoryId):await window.salonSupabase.from('service_categories').insert(payload);
-    if(result.error){message(result.error.message,'error');return;}message(state.editingCategoryId?'Category updated.':'Category added.','success');resetCategoryForm();await loadData();
+
+    var uploaded=null;
+    try {
+      if(file) uploaded=await uploadCategoryImage(file);
+      if(uploaded) payload.image_url=uploaded.url;
+
+      var result=state.editingCategoryId
+        ? await window.salonSupabase.from('service_categories').update(payload).eq('id',state.editingCategoryId)
+        : await window.salonSupabase.from('service_categories').insert(payload);
+      if(result.error) throw result.error;
+    } catch(err) {
+      if(uploaded&&uploaded.path) await window.salonSupabase.storage.from('site-assets').remove([uploaded.path]);
+      message(err.message||'Could not save category.','error');
+      return;
+    }
+
+    if(uploaded&&editing&&editing.image_url){
+      var oldPath=categoryStoragePathFromUrl(editing.image_url);
+      if(oldPath){
+        var cleanup=await window.salonSupabase.storage.from('site-assets').remove([oldPath]);
+        if(cleanup.error) console.warn('Category saved, but the old category image could not be removed:',cleanup.error);
+      }
+    }
+    message(state.editingCategoryId?'Category updated.':'Category added.','success');
+    resetCategoryForm();
+    await loadData();
   }
 
 
@@ -2730,7 +2800,15 @@
     var roleForm=$('role-form'); if(roleForm) roleForm.addEventListener('submit',saveRole); var roleCancel=$('role-cancel'); if(roleCancel) roleCancel.addEventListener('click',function(){$('role-form-card').classList.add('crm-hidden');state.editingRoleId=null;}); var newRoleTop=$('new-role-top'); if(newRoleTop) newRoleTop.addEventListener('click',startRoleCreate); var rolesTableBody=$('roles-table-body'); if(rolesTableBody) rolesTableBody.addEventListener('click',function(e){var edit=e.target.closest('[data-edit-role]');if(edit)editRole(edit.getAttribute('data-edit-role'));var del=e.target.closest('[data-delete-role]');if(del)deleteRole(del.getAttribute('data-delete-role'));}); var roleSelectAll=$('role-select-all'); if(roleSelectAll) roleSelectAll.addEventListener('change',function(e){document.querySelectorAll('[data-role-permission]').forEach(function(c){c.checked=e.target.checked;});});
     $('password-setup-form').addEventListener('submit',finishPasswordSetup);
     $('invite-user-btn').addEventListener('click',function(){$('user-form-card').classList.remove('crm-hidden');$('user-name').focus();});
-    $('service-reset').addEventListener('click',resetServiceForm);$('category-reset').addEventListener('click',resetCategoryForm);$('logout').addEventListener('click',signOut);
+    $('service-reset').addEventListener('click',resetServiceForm);$('category-reset').addEventListener('click',resetCategoryForm);
+    $('category-image-file').addEventListener('change',function(){
+      var file=this.files&&this.files[0];
+      if(!file){ renderCategoryImagePreview(''); return; }
+      if(!/^image\//i.test(file.type)){ message('Please choose an image file.','error'); this.value=''; renderCategoryImagePreview(''); return; }
+      var previewUrl=URL.createObjectURL(file);
+      renderCategoryImagePreview(previewUrl);
+    });
+    $('logout').addEventListener('click',signOut);
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view'));});});
     document.querySelectorAll('[data-view-target]').forEach(function(b){b.addEventListener('click',function(){showView(b.getAttribute('data-view-target'));});});
     $('mobile-menu').addEventListener('click',function(){$('crm-sidebar').classList.toggle('open');});

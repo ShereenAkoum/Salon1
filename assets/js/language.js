@@ -11,20 +11,20 @@
       ? window.salonDatabase.getBookingConfiguration().catch(function () { return null; })
       : Promise.resolve(null),
     window.salonDatabase && window.salonDatabase.getTranslations
-      ? window.salonDatabase.getTranslations()
-      : Promise.reject(new Error('Translation database client is not available.'))
+      ? window.salonDatabase.getTranslations().catch(function () { return []; })
+      : Promise.resolve([]),
+    window.salonDatabase && window.salonDatabase.getServiceCategories
+      ? window.salonDatabase.getServiceCategories().catch(function () { return []; })
+      : Promise.resolve([]),
+    window.salonDatabase && window.salonDatabase.getServices
+      ? window.salonDatabase.getServices().catch(function () { return []; })
+      : Promise.resolve([])
   ]).then(function (results) {
     var appSettings = results[0];
     var bookingConfiguration = results[1];
     var translationRows = results[2] || [];
-    var pageData = {
-      ourServices: {
-        items: [
-          { src: 'hairStyles.png', height: 90 },
-          { src: 'hairTreatment.png', height: 90 }
-        ]
-      }
-    };
+    var serviceCategories = results[3] || [];
+    var activeServices = results[4] || [];
     var translations = {};
 
     translationRows.forEach(function (row) {
@@ -72,33 +72,57 @@
       };
     }
 
-    function renderServiceItems(lang) {
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function serviceCategoryImageUrl(category) {
+      var src = category && category.image_url ? String(category.image_url).trim() : '';
+      if (!src) return '';
+      if (/^(https?:|data:|blob:)/i.test(src)) return src;
+      return 'assets/images/' + src.replace(/^\/+/, '');
+    }
+
+    function renderServiceItems() {
       var grid = document.getElementById('services-grid');
-      if (!grid || !pageData.ourServices || !pageData.ourServices.items) return;
+      if (!grid) return;
 
-      grid.innerHTML = pageData.ourServices.items.map(function (item, index) {
-        var row = translations['ourServices.items.' + index + '.title'] || {};
-        var descRow = translations['ourServices.items.' + index + '.description'] || {};
-        var title = row[lang] || row.en || '';
-        var description = descRow[lang] || descRow.en || '';
-        var filePath = 'assets/images/';
-        var src = item['src-' + lang] || item.src;
-        if (src) filePath += src;
+      var categories = (serviceCategories || [])
+        .filter(function(category) {
+          return category && category.active !== false && activeServices.some(function(service) {
+            return service && service.active !== false && String(service.category_id) === String(category.id);
+          });
+        })
+        .sort(function(a, b) { return Number(a.sort_order || 0) - Number(b.sort_order || 0); })
+        .slice(0, 4);
 
-        var width = 'auto';
-        var height = item.height || '62';
+      grid.innerHTML = categories.map(function(category) {
+        var title = category.name_en || '';
+        var description = category.description_en || '';
+        var src = serviceCategoryImageUrl(category);
+        var width = category.image_width || 150;
+        var height = category.image_height || 90;
         var imgHtml = src
-          ? '<figure class="box-icon-image"><img src="' + filePath + '" alt="' + title + '" width="' + width + '" height="' + height + '" /></figure>'
+          ? '<figure class=\"box-icon-image\"><img src=\"' + escapeHtml(src) + '\" alt=\"' + escapeHtml(title) + '\" width=\"' + escapeHtml(width) + '\" height=\"' + escapeHtml(height) + '\" loading=\"lazy\" /></figure>'
           : '';
 
-        return '<div class="cell-xs-6">'
-          + '<article class="box-icon">'
+        return '<div class=\"cell-xs-6\">'
+          + '<article class=\"box-icon\">'
           + imgHtml
-          + '<p class="box-icon-header"><a class="link-underlined" href="booking.html">' + title + '</a></p>'
-          + '<p class="box-icon-text">' + description + '</p>'
+          + '<p class=\"box-icon-header\"><a class=\"link-underlined\" href=\"booking.html\">' + escapeHtml(title) + '</a></p>'
+          + '<p class=\"box-icon-text\">' + escapeHtml(description) + '</p>'
           + '</article>'
           + '</div>';
       }).join('');
+
+      if (!categories.length) {
+        grid.innerHTML = '<div class=\"cell-xs-12\"><p class=\"box-icon-text\">No services are available yet.</p></div>';
+      }
     }
 
     function applyLang(lang, isInitial) {
@@ -147,11 +171,11 @@
 
       if (isInitial) {
         doApply();
-        renderServiceItems(lang);
+        renderServiceItems();
       } else {
         setTimeout(function () {
           doApply();
-          renderServiceItems(lang);
+          renderServiceItems();
         }, 150);
       }
     }
