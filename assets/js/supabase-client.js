@@ -139,6 +139,43 @@
       };
     },
 
+    async getTranslations() {
+      var result = await window.salonSupabase
+        .from('site_translations')
+        .select('key,en,ar,description')
+        .eq('active', true)
+        .order('key', { ascending: true });
+
+      if (result.error) throw result.error;
+      return result.data || [];
+    },
+
+    async saveTranslation(key, en, ar) {
+      var result = await window.salonSupabase
+        .from('site_translations')
+        .upsert({
+          key: String(key || '').trim(),
+          en: en == null ? '' : String(en),
+          ar: ar == null ? '' : String(ar),
+          active: true
+        }, { onConflict: 'key' })
+        .select('key,en,ar,description')
+        .single();
+
+      if (result.error) throw result.error;
+      return result.data;
+    },
+
+    async deleteTranslation(key) {
+      var result = await window.salonSupabase
+        .from('site_translations')
+        .delete()
+        .eq('key', String(key || '').trim());
+
+      if (result.error) throw result.error;
+      return true;
+    },
+
     async getVouchers() {
       var result = await window.salonSupabase
         .from('vouchers')

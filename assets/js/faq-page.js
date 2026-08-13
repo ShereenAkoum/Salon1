@@ -3,6 +3,7 @@
 
     var faqSettings = null;
     var faqItems = [];
+  var uiTranslations = {};
 
     function currentLang() {
         var lang = document.documentElement.getAttribute('lang')
@@ -11,7 +12,12 @@
         return String(lang).toLowerCase() === 'ar' ? 'ar' : 'en';
     }
 
-    function renderFaq(lang) {
+    function uiText(key, lang) {
+    var row = uiTranslations[key] || {};
+    return row[lang] || row.en || '';
+  }
+
+  function renderFaq(lang) {
         lang = (String(lang).toLowerCase() === 'ar') ? 'ar' : 'en';
 
         var descEl = document.getElementById('faq-description');
@@ -30,9 +36,7 @@
         if (!faqItems.length) {
             var empty = document.createElement('p');
             empty.className = 'big';
-            empty.textContent = lang === 'ar'
-                ? 'لا توجد أسئلة شائعة متاحة حالياً.'
-                : 'No frequently asked questions are available at the moment.';
+            empty.textContent = uiText('faq.empty', lang);
             faqList.appendChild(empty);
             return;
         }
@@ -72,7 +76,16 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        loadFaq().catch(function (err) {
+        var translationPromise = window.salonDatabase && window.salonDatabase.getTranslations
+            ? window.salonDatabase.getTranslations()
+            : Promise.resolve([]);
+
+        translationPromise.then(function (rows) {
+            (rows || []).forEach(function (row) {
+                if (row && row.key) uiTranslations[row.key] = { en: row.en || '', ar: row.ar || '' };
+            });
+            return loadFaq();
+        }).catch(function (err) {
             console.error('[FAQ] Could not load FAQ from Supabase:', err);
 
             var faqList = document.getElementById('faq-list');
@@ -81,9 +94,7 @@
 
                 var message = document.createElement('p');
                 message.className = 'big';
-                message.textContent = currentLang() === 'ar'
-                    ? 'تعذر تحميل الأسئلة الشائعة حالياً.'
-                    : 'Unable to load the FAQ right now.';
+                message.textContent = uiText('faq.error', currentLang());
                 faqList.appendChild(message);
             }
         });

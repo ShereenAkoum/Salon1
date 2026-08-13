@@ -38,3 +38,17 @@ The public website also includes:
 - `assets/js/config/application-settings.js` — loads active settings from Supabase. If Supabase is unavailable, it uses small built-in defaults.
 
 Services, prices and durations are read from the Supabase `service_categories` and `services` tables. A missing/invalid service duration defaults to 30 minutes.
+
+
+## Social & messaging links
+
+Application Settings now includes WhatsApp, Facebook, Instagram, TikTok, YouTube, Snapchat and X. Each channel has:
+
+- Active / not active visibility control
+- Public URL
+- Supabase-hosted icon
+- CRM icon replacement upload
+
+Run `supabase/sql/APPLICATION-SOCIAL-SETTINGS.sql` once. When an administrator opens Application Settings, the bundled default SVG icons are uploaded to the `site-assets` Supabase bucket automatically if an icon is missing.
+
+Only active channels with both a URL and icon are rendered on the public website navigation/footer.

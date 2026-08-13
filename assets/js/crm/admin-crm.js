@@ -2,7 +2,7 @@
   'use strict';
 
   var passwordSetupMode = 'invite';
-  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], roles: [], permissions: [], access: {}, rolePermissions: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, editingFaqId: null, faqs: [], faqSettings: null, currentView: 'dashboard', currentRole: null, currentUserId: null, mustChangePassword: false };
+  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], roles: [], permissions: [], access: {}, rolePermissions: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, editingFaqId: null, faqs: [], faqSettings: null, translations: [], editingTranslationKey: null, currentView: 'dashboard', currentRole: null, currentUserId: null, mustChangePassword: false };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -114,7 +114,7 @@
   var ROLE_PERMISSION_SECTIONS = [
     ['dashboard','Dashboard'],['services','Services'],['vouchers','Vouchers'],['faqs','FAQs'],
     ['bookings','Bookings'],['booking-config','Booking Setup'],['customers','Customers'],
-    ['settings','Settings'],['users','Users & Access'],['roles','Roles & Permissions']
+    ['settings','Settings'],['translations','Translation'],['users','Users & Access'],['roles','Roles & Permissions']
   ];
   var ROLE_ACTIONS = ['read','create','update','delete'];
 
@@ -492,6 +492,77 @@
     } catch (e) { return null; }
   }
 
+  var WEBSITE_IMAGE_SLOTS = [
+    {key:'who_we_are_image_1', inputId:'who-we-are-image-1-file', previewId:'who-we-are-image-1-preview', uploadId:'upload-who-we-are-image-1', label:'Who We Are image 1'},
+    {key:'who_we_are_image_2', inputId:'who-we-are-image-2-file', previewId:'who-we-are-image-2-preview', uploadId:'upload-who-we-are-image-2', label:'Who We Are image 2'},
+    {key:'who_we_are_image_3', inputId:'who-we-are-image-3-file', previewId:'who-we-are-image-3-preview', uploadId:'upload-who-we-are-image-3', label:'Who We Are image 3'},
+    {key:'homepage_hero_image', inputId:'homepage-hero-image-file', previewId:'homepage-hero-image-preview', uploadId:'upload-homepage-hero-image', label:'Homepage hero'},
+    {key:'services_section_image', inputId:'services-section-image-file', previewId:'services-section-image-preview', uploadId:'upload-services-section-image', label:'Services section'},
+    {key:'contact_section_image', inputId:'contact-section-image-file', previewId:'contact-section-image-preview', uploadId:'upload-contact-section-image', label:'Contact section'}
+  ];
+
+  function websiteImagePayload(slot) {
+    var value = settingValue(slot.key, null);
+    if (!value) return {path:'',url:'',width:'100%',height:'auto'};
+    try { return normalizeBrandingImage(value, slot.key); }
+    catch (e) { return {path:'',url:'',width:'100%',height:'auto'}; }
+  }
+
+  function renderWebsiteImages() {
+    WEBSITE_IMAGE_SLOTS.forEach(function(slot){
+      var payload = websiteImagePayload(slot);
+      var preview = $(slot.previewId);
+      if (preview) {
+        if (payload.url) {
+          preview.src = payload.url;
+          preview.hidden = false;
+          preview.onerror = function(){ preview.removeAttribute('src'); preview.hidden = true; };
+        } else {
+          preview.removeAttribute('src');
+          preview.hidden = true;
+        }
+      }
+    });
+  }
+
+  async function uploadWebsiteImage(slot) {
+    if (!requirePermission('settings','update')) return;
+    var input = $(slot.inputId);
+    var file = input && input.files ? input.files[0] : null;
+    if (!file) { message('Choose an image first.','error'); return; }
+    if (!/^image\//i.test(file.type)) { message('Please choose an image file.','error'); return; }
+    if (file.size > 5 * 1024 * 1024) { message('Image must be 5 MB or smaller.','error'); return; }
+
+    var ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');
+    if (!/^(jpg|jpeg|png|webp|gif|ico)$/.test(ext)) ext = 'jpg';
+    var path = 'website/' + slot.key + '-' + Date.now() + '-' + Math.random().toString(36).slice(2,8) + '.' + ext;
+    var old = websiteImagePayload(slot);
+    var upload = await window.salonSupabase.storage.from('site-assets').upload(path, file, {upsert:false, contentType:file.type || undefined});
+    if (upload.error) throw upload.error;
+    var publicUrlResult = window.salonSupabase.storage.from('site-assets').getPublicUrl(path);
+    var publicUrl = publicUrlResult && publicUrlResult.data ? publicUrlResult.data.publicUrl : '';
+    if (!publicUrl) throw new Error('Could not create a public URL for the uploaded image.');
+
+    try {
+      var result = await window.salonSupabase.from('application_settings').upsert({
+        setting_key:slot.key,
+        setting_value:{path:path,url:publicUrl,width:old.width || '100%',height:old.height || 'auto'},
+        description:slot.label + ' used by the public website.',
+        active:true,
+        updated_at:new Date().toISOString()
+      }, {onConflict:'setting_key'});
+      if (result.error) throw result.error;
+      await loadApplicationSettings();
+    } catch (err) {
+      await window.salonSupabase.storage.from('site-assets').remove([path]);
+      throw err;
+    }
+    if (old.path && old.path.indexOf('website/') === 0) await window.salonSupabase.storage.from('site-assets').remove([old.path]);
+    if (input) input.value = '';
+    message(slot.label + ' uploaded.','success');
+  }
+
+
   function brandingDefaultPayload(key) {
     var defaultKey = key + '_default';
     var row = state.appSettings.find(function(x){ return x.setting_key === defaultKey; });
@@ -504,6 +575,13 @@
     var banner = imageSettingPayload('banner_image');
     var favicon = optionalImageSettingPayload('favicon_image');
     var headerPreview = $('header-image-preview');
+    var sidebarLogo = $('crm-sidebar-logo');
+    if (sidebarLogo) {
+      sidebarLogo.src = header.url;
+      sidebarLogo.hidden = false;
+      sidebarLogo.style.objectFit = 'contain';
+      sidebarLogo.onerror = function(){ sidebarLogo.removeAttribute('src'); sidebarLogo.hidden = true; };
+    }
     if (headerPreview) {
       headerPreview.src = header.url;
       headerPreview.style.width = header.width;
@@ -526,6 +604,7 @@
       else { faviconPreview.removeAttribute('src'); faviconPreview.hidden = true; }
       faviconPreview.onerror = function(){ faviconPreview.removeAttribute('src'); faviconPreview.hidden = true; };
     }
+    renderWebsiteImages();
     document.querySelectorAll('.crm-welcome').forEach(function(hero){
       hero.style.backgroundImage = 'linear-gradient(120deg, rgba(48,40,36,.82), rgba(87,70,62,.72)), url("' + String(banner.url).replace(/"/g, '\\"') + '")';
       hero.style.backgroundSize = 'cover';
@@ -734,13 +813,14 @@
     return options;
   }
 
-  async function loadApplicationSettings() {
+  async function loadApplicationSettings(ensureSocial) {
     var result = await window.salonSupabase
       .from('application_settings')
       .select('id,setting_key,setting_value,description,active,created_at,updated_at')
       .order('setting_key', {ascending:true});
     if (result.error) throw result.error;
     state.appSettings = result.data || [];
+    deactivateLegacySocialSettings();
     renderApplicationSettings();
   }
 
@@ -750,6 +830,51 @@
     var brand = $('crm-sidebar-website-name');
     if (brand) brand.textContent = name;
     document.title = name + ' — CRM';
+  }
+
+  var SOCIAL_DEFAULTS = [
+    {key:'social_whatsapp', slug:'whatsapp', label:'WhatsApp'},
+    {key:'social_facebook', slug:'facebook', label:'Facebook'},
+    {key:'social_instagram', slug:'instagram', label:'Instagram'}
+  ];
+
+  function parseSettingPayload(value) {
+    if (typeof value === 'string') { try { return JSON.parse(value); } catch (e) { return {}; } }
+    return value && typeof value === 'object' ? value : {};
+  }
+
+  function socialRow(key) {
+    return state.appSettings.find(function(x){ return x.setting_key === key; }) || null;
+  }
+
+  function socialPayloadFor(meta) {
+    var row = socialRow(meta.key);
+    var payload = parseSettingPayload(row && row.setting_value);
+    return {url: String(payload.url || '')};
+  }
+
+  function renderSocialSettings() {
+    var container = $('social-settings-list');
+    if (!container) return;
+    container.innerHTML = SOCIAL_DEFAULTS.map(function(meta){
+      var row = socialRow(meta.key);
+      var payload = socialPayloadFor(meta);
+      var active = row ? row.active !== false : false;
+      var iconClass = 'fa-' + meta.slug;
+      return '<div class="crm-social-row" data-social-row="'+escapeHtml(meta.key)+'">'+
+        '<div class="crm-social-icon-preview '+escapeHtml(iconClass)+'" aria-hidden="true"></div>'+
+        '<div class="crm-social-name"><strong>'+escapeHtml(meta.label)+'</strong><small>'+escapeHtml(meta.slug)+'</small></div>'+
+        '<div class="crm-social-field crm-social-field-url"><label for="social-url-'+escapeHtml(meta.slug)+'">Public URL</label><input id="social-url-'+escapeHtml(meta.slug)+'" type="url" data-social-url="'+escapeHtml(meta.key)+'" value="'+escapeHtml(payload.url)+'" placeholder="https://..."></div>'+
+        '<div class="crm-social-status"><label><input type="checkbox" data-social-active="'+escapeHtml(meta.key)+'" '+(active?'checked':'')+'> Active — show on website</label></div>'+
+      '</div>';
+    }).join('');
+  }
+
+  function deactivateLegacySocialSettings() {
+    ['social_tiktok','social_youtube','social_snapchat','social_x'].forEach(function(key){
+      var row=socialRow(key);
+      if (row && row.active !== false) row.active=false;
+    });
   }
 
   function renderApplicationSettings() {
@@ -782,6 +907,7 @@
 
     renderCurrencyOptions(options);
     renderBrandingSettings();
+    renderSocialSettings();
 
     var status = $('app-settings-status');
     if (status) status.textContent = 'Synced with Supabase';
@@ -839,6 +965,15 @@
       return;
     }
 
+    var socialSettings = SOCIAL_DEFAULTS.map(function(meta){
+      var existing = socialRow(meta.key);
+      var payload = socialPayloadFor(meta);
+      var urlInput = document.querySelector('[data-social-url="'+meta.key+'"]');
+      var activeInput = document.querySelector('[data-social-active="'+meta.key+'"]');
+      payload.url = urlInput ? urlInput.value.trim() : payload.url;
+      return {key:meta.key,value:{url:payload.url},description:meta.label+' social link.',active:!!(activeInput && activeInput.checked)};
+    });
+
     var settings = [
       {key:'website_name', value:websiteName, description:'Public website name used across the website and browser title.'},
       {key:'display_currency', value:currency, description:'Default website display currency.'},
@@ -848,7 +983,7 @@
       {key:'header_image', value:headerImage, description:'Website header image and display dimensions.'},
       {key:'banner_image', value:bannerImage, description:'Website page banner image and display dimensions.'},
       {key:'favicon_image', value:faviconImage, description:'Website favicon shown in the browser tab.'}
-    ];
+    ].concat(socialSettings);
 
     var button = $('save-application-settings');
     if (button) { button.disabled = true; button.textContent = 'Saving…'; }
@@ -862,7 +997,7 @@
             setting_key: s.key,
             setting_value: s.value,
             description: s.description,
-            active: true,
+            active: s.active !== undefined ? s.active : true,
             updated_at: new Date().toISOString()
           }, {onConflict:'setting_key'});
         if (result.error) {
@@ -2207,6 +2342,82 @@
     message('Booking ' + id + ' marked as ' + statusLabel(status) + '.', 'success');
   }
 
+  async function loadTranslations() {
+    if (!can('translations','read')) { state.translations = []; return; }
+    if (!window.salonDatabase || !window.salonDatabase.getTranslations) throw new Error('Translation database is not available.');
+    state.translations = await window.salonDatabase.getTranslations();
+    renderTranslations();
+  }
+
+  function renderTranslations() {
+    var body = $('translation-table-body');
+    if (!body) return;
+    var query = String(($('translation-search') && $('translation-search').value) || '').trim().toLowerCase();
+    var rows = (state.translations || []).filter(function(row) {
+      if (!query) return true;
+      return [row.key, row.en, row.ar].some(function(value) {
+        return String(value || '').toLowerCase().indexOf(query) !== -1;
+      });
+    });
+
+    body.innerHTML = rows.map(function(row) {
+      return '<tr>' +
+        '<td><code>' + escapeHtml(row.key) + '</code></td>' +
+        '<td>' + escapeHtml(row.en || '') + '</td>' +
+        '<td dir="rtl">' + escapeHtml(row.ar || '') + '</td>' +
+        '<td><div class="crm-actions-inline">' +
+          (can('translations','update') ? '<button type="button" class="crm-btn crm-btn-secondary crm-btn-small" data-edit-translation="' + escapeHtml(row.key) + '">Edit</button>' : '') +
+        '</div></td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="4" class="crm-empty">No translations found.</td></tr>';
+  }
+
+  function openTranslationForm(key) {
+    var row = (state.translations || []).find(function(item) { return item.key === key; });
+    state.editingTranslationKey = row ? row.key : null;
+    $('translation-form-card').classList.remove('crm-hidden');
+    $('translation-key').value = row ? row.key : '';
+    $('translation-key').readOnly = !!row;
+    $('translation-en').value = row ? (row.en || '') : '';
+    $('translation-ar').value = row ? (row.ar || '') : '';
+    $('translation-en').focus();
+  }
+
+  function closeTranslationForm() {
+    state.editingTranslationKey = null;
+    var card = $('translation-form-card');
+    if (card) card.classList.add('crm-hidden');
+    if ($('translation-key')) $('translation-key').readOnly = false;
+  }
+
+  async function saveTranslation(e) {
+    e.preventDefault();
+    var isEdit = !!state.editingTranslationKey;
+    var action = isEdit ? 'update' : 'create';
+    if (!can('translations', action)) {
+      message('You do not have permission to change translations.', 'error');
+      return;
+    }
+
+    var key = String($('translation-key').value || '').trim();
+    var en = $('translation-en').value;
+    var ar = $('translation-ar').value;
+    if (!key || !en.trim() || !ar.trim()) {
+      message('Key, English and Arabic are required.', 'error');
+      return;
+    }
+
+    try {
+      await window.salonDatabase.saveTranslation(key, en, ar);
+      closeTranslationForm();
+      await loadTranslations();
+      message('Translation saved.', 'success');
+    } catch (err) {
+      console.error(err);
+      message(err.message || 'Could not save translation.', 'error');
+    }
+  }
+
   function viewStorageKey(userId) { return userId ? 'crm-current-view:' + String(userId) : null; }
   function restoreLastView() {
     var key = viewStorageKey(state.currentUserId);
@@ -2225,7 +2436,7 @@
     document.querySelectorAll('.crm-view').forEach(function(el){el.classList.add('crm-hidden');});
     var target=$('view-'+view); if(target)target.classList.remove('crm-hidden');
     document.querySelectorAll('.crm-nav-item').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-view')===view);});
-    var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],faqs:['Content','FAQs'],bookings:['Appointments','Bookings'],customers:['Customers','Customers'],'booking-config':['Booking','Booking Setup'],settings:['Configuration','Application Settings'],roles:['Access control','Roles & Permissions']};
+    var titles={dashboard:['Overview','Dashboard'],services:['Catalog','Services'],users:['Access control','Users & Access'],vouchers:['Marketing','Vouchers'],faqs:['Content','FAQs'],bookings:['Appointments','Bookings'],customers:['Customers','Customers'],'booking-config':['Booking','Booking Setup'],settings:['Configuration','Application Settings'],translations:['Content','Translation'],roles:['Access control','Roles & Permissions']};
     var t=titles[view]||titles.dashboard;$('view-eyebrow').textContent=t[0];$('view-title').textContent=t[1];
     if(view==='users') loadUsers().catch(function(e){message(e.message,'error');});
     if(view==='roles') loadRoles().catch(function(e){message(e.message,'error');});
@@ -2235,6 +2446,7 @@
     if(view==='dashboard') updateDashboard();
     if(view==='customers') loadCustomers().catch(function(e){message(e.message,'error');});
     if(view==='booking-config') loadBookingConfig().catch(function(e){message(e.message||'Could not load booking configuration.','error');});
+    if(view==='translations') loadTranslations().catch(function(e){message(e.message||'Could not load translations.','error');});
     $('crm-sidebar').classList.remove('open');
   }
 
@@ -2470,6 +2682,10 @@
 
   document.addEventListener('DOMContentLoaded',async function(){
     $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);$('upload-header-image').addEventListener('click',function(){uploadBrandingImage('header_image','header-image-file').catch(function(e){message(e.message,'error');});});$('delete-header-image').addEventListener('click',function(){deleteBrandingImage('header_image').catch(function(e){message(e.message,'error');});});$('upload-banner-image').addEventListener('click',function(){uploadBrandingImage('banner_image','banner-image-file').catch(function(e){message(e.message,'error');});});$('delete-banner-image').addEventListener('click',function(){deleteBrandingImage('banner_image').catch(function(e){message(e.message,'error');});});$('upload-favicon-image').addEventListener('click',function(){uploadBrandingImage('favicon_image','favicon-image-file',2).catch(function(e){message(e.message,'error');});});$('delete-favicon-image').addEventListener('click',function(){deleteBrandingImage('favicon_image').catch(function(e){message(e.message,'error');});});
+    WEBSITE_IMAGE_SLOTS.forEach(function(slot){
+      var uploadButton = $(slot.uploadId);
+      if (uploadButton) uploadButton.addEventListener('click',function(){uploadWebsiteImage(slot).catch(function(e){message(e.message,'error');});});
+    });
     $('user-form').addEventListener('submit',inviteUser);$('user-cancel').addEventListener('click',function(){$('user-form-card').classList.add('crm-hidden');});
     $('user-edit-form').addEventListener('submit',saveUser);$('user-edit-cancel').addEventListener('click',function(){$('user-edit-card').classList.add('crm-hidden');state.editingUserId=null;});
     var tempGenerate=$('generate-temporary-password'); if(tempGenerate) tempGenerate.addEventListener('click',generateTemporaryPassword); var tempSet=$('set-temporary-password'); if(tempSet) tempSet.addEventListener('click',setTemporaryPassword);
@@ -2636,9 +2852,6 @@
     var weekendOpening=$('booking-weekend-opening-time'); if(weekendOpening) weekendOpening.value=String(s.weekend_opening_time||'10:00').slice(0,5);
     var weekendClosing=$('booking-weekend-closing-time'); if(weekendClosing) weekendClosing.value=String(s.weekend_closing_time||'16:00').slice(0,5);
     var advance=$('booking-advance-months'); if(advance) advance.value=s.advance_months??3;
-    var messages=$('booking-messages-json'); if(messages) messages.value=JSON.stringify(s.messages||{},null,2);
-    var dateText=$('booking-date-text-json'); if(dateText) dateText.value=JSON.stringify(s.date_time_text||{},null,2);
-    var review=$('booking-review-text-json'); if(review) review.value=JSON.stringify(s.review_text||{},null,2);
     renderBookingRules();
   }
 
@@ -2679,16 +2892,6 @@
     } catch(err){ console.error(err); message(err.message||'Could not save booking settings.','error'); }
   }
 
-  async function saveBookingText(e) {
-    e.preventDefault();
-    try {
-      var messages=JSON.parse($('booking-messages-json').value||'{}');
-      var dateText=JSON.parse($('booking-date-text-json').value||'{}');
-      var review=JSON.parse($('booking-review-text-json').value||'{}');
-      await window.salonDatabase.updateBookingSettings({messages:messages,date_time_text:dateText,review_text:review});
-      await loadBookingConfig(); message('Booking page text saved.','success');
-    } catch(err){ console.error(err); message(err.name==='SyntaxError'?'One of the JSON fields is invalid.':(err.message||'Could not save booking text.'),'error'); }
-  }
 
   async function saveBookingRule(e) {
     e.preventDefault();
@@ -2716,11 +2919,18 @@
 
   document.addEventListener('DOMContentLoaded', function(){
     var save=$('booking-settings-form'); if(save)save.addEventListener('submit',saveBookingSettings);
-    var text=$('booking-text-form'); if(text)text.addEventListener('submit',saveBookingText);
     var refresh=$('booking-config-refresh'); if(refresh)refresh.addEventListener('click',function(){loadBookingConfig().catch(function(e){message(e.message||'Could not load booking configuration.','error');});});
     var add=$('new-booking-rule'); if(add)add.addEventListener('click',function(){openBookingRuleForm(null);});
     var cancel=$('cancel-booking-rule'); if(cancel)cancel.addEventListener('click',function(){$('booking-rule-form-card').classList.add('crm-hidden');bookingConfigState.editingRuleId=null;});
     var form=$('booking-rule-form'); if(form)form.addEventListener('submit',saveBookingRule);
+    var translationForm=$('translation-form'); if(translationForm)translationForm.addEventListener('submit',saveTranslation);
+    var translationAdd=$('translation-add-btn'); if(translationAdd)translationAdd.addEventListener('click',function(){ if(can('translations','create')) openTranslationForm(null); else message('You do not have permission to create translations.','error'); });
+    var translationCancel=$('translation-cancel-btn'); if(translationCancel)translationCancel.addEventListener('click',closeTranslationForm);
+    var translationSearch=$('translation-search'); if(translationSearch)translationSearch.addEventListener('input',renderTranslations);
+    var translationBody=$('translation-table-body'); if(translationBody)translationBody.addEventListener('click',function(e){
+      var button=e.target.closest('[data-edit-translation]');
+      if(button) openTranslationForm(button.getAttribute('data-edit-translation'));
+    });
     var startInput=$('booking-rule-start');
     var endInput=$('booking-rule-end');
     if(startInput && endInput){

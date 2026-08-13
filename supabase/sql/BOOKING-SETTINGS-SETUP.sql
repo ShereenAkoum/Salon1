@@ -19,9 +19,6 @@ create table if not exists public.booking_settings (
   weekend_opening_time time not null default '10:00',
   weekend_closing_time time not null default '16:00',
   advance_months integer not null default 3 check (advance_months > 0),
-  messages jsonb not null default '{}'::jsonb,
-  date_time_text jsonb not null default '{}'::jsonb,
-  review_text jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -220,10 +217,7 @@ insert into public.booking_settings (
   weekend_slot_minutes,
   weekend_opening_time,
   weekend_closing_time,
-  advance_months,
-  messages,
-  date_time_text,
-  review_text
+  advance_months
 )
 values (
   1,
@@ -236,41 +230,7 @@ values (
   30,
   '10:00',
   '16:00',
-  3,
-  '{
-    "en": {
-      "closed": "Closed",
-      "booked": "Booked",
-      "available": "Available"
-    },
-    "ar": {
-      "closed": "مغلق",
-      "booked": "محجوز",
-      "available": "متاح"
-    }
-  }'::jsonb,
-  '{
-    "back": {"en":"Back","ar":"رجوع"},
-    "title": {"en":"When would you like to come?","ar":"متى ترغبين في القدوم؟"},
-    "description": {"en":"Pick a date, then choose a start time that fits all your selected services.","ar":"اختاري التاريخ ثم وقت البدء المناسب لجميع الخدمات التي اخترتها."}
-  }'::jsonb,
-  '{
-    "back": {"en":"Back","ar":"رجوع"},
-    "title": {"en":"ONE MORE STEP!","ar":"خطوة أخيرة!"},
-    "description": {
-      "en":"To complete your appointment, please review all details described below. Don''t forget to provide your name and phone and telephone so that we could contact you.",
-      "ar":"لإتمام موعدك، يرجى مراجعة جميع التفاصيل الموضحة أدناه. لا تنسَ تزويدنا باسمك ورقم هاتفك حتى نتمكن من التواصل معك."
-    },
-    "serviceLabel": {"en":"Service:","ar":"الخدمة:"},
-    "dateLabel": {"en":"Date:","ar":"التاريخ:"},
-    "namePlaceholder": {"en":"Full Name","ar":"الاسم الكامل"},
-    "phonePlaceholder": {"en":"Telephone","ar":"رقم الهاتف"},
-    "submitButton": {"en":"Book now","ar":"احجز الآن"},
-    "submitting": {"en":"Booking...","ar":"جارٍ الحجز..."},
-    "successMessage": {"en":"Thanks! We will contact you soon.","ar":"شكراً! سنتواصل معك قريباً."},
-    "errorMessage": {"en":"Oops! Something went wrong.","ar":"عذراً! حدث خطأ ما."},
-    "voucherLabel": {"en":"Voucher:","ar":"قسيمة:"}
-  }'::jsonb
+  3
 )
 on conflict (id) do update set
   slot_minutes = excluded.slot_minutes,
@@ -283,9 +243,6 @@ on conflict (id) do update set
   weekend_opening_time = excluded.weekend_opening_time,
   weekend_closing_time = excluded.weekend_closing_time,
   advance_months = excluded.advance_months,
-  messages = excluded.messages,
-  date_time_text = excluded.date_time_text,
-  review_text = excluded.review_text,
   updated_at = now();
 
 -- ============================================================

@@ -5,46 +5,6 @@
 }
 
 
-.card-service-list {
-  list-style: none;
-  padding: 0;
-  margin: 10px 0;
-}
-
-.card-service-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-
-.card-service-price-list {
-  width: 90px !important;
-  font-size: 13px;
-  padding: 4px 8px;
-  color: var(--color-primary);
-  background: #fff;
-  border: 1px solid var(--color-primary);
-  padding: 4px 8px;
-  text-decoration: none;
-  border-radius: 4px;
-  transition: all 0.3s ease;
-  text-transform: capitalize;
-}
-
-.card-service-price-list:hover {
-  color: #fff;
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.card-service-list li .btn {
-  width: 80px;
-  min-width: 80px;
-  text-align: center;
-}
-
 .brand-name {
   font-size: 24px;
   font-weight: bold;
@@ -516,57 +476,5 @@ div#date-picker-container {
   gap: 10px; /* optional spacing between elements */
 }
 
-
-/* Service list for multi-service category cards.
-   Price is intentionally part of the Book button, matching the original design. */
-.card-service-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.card-service-list-name {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.card-service-price-list {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-
-/* Service buttons: fixed, consistent size while allowing USD/QAR/Arabic labels. */
-.card-service-list .card-service-price-list,
-.card-service-list li .btn {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-  min-height: 36px;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: clip;
-}
-
-.card-service-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.card-service-list-name {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-html[lang="ar"] .card-service-list .card-service-price-list,
-html[lang="ar"] .card-service-list li .btn {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-}
+/* CRM-managed social visibility: inactive channels must not occupy layout space. */
+.site-social-hidden { display: none !important; }

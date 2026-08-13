@@ -87,12 +87,6 @@
         weekend_opening_time: '10:00',
         weekend_closing_time: '16:00',
         advance_months: 3,
-        messages: {
-          en: { closed: 'Closed', booked: 'Booked', available: 'Available' },
-          ar: { closed: 'مغلق', booked: 'محجوز', available: 'متاح' }
-        },
-        date_time_text: {},
-        review_text: {}
       },
       schedule: []
     };
@@ -157,9 +151,6 @@
         timeSlots: buildSlots(weekday),
         slotMinutes: weekday.slotMinutes,
         advanceMonths: Number(settings.advance_months || 3),
-        messages: settings.messages || {},
-        dateTimeText: settings.date_time_text || {},
-        bookingReview: settings.review_text || {}
       },
       scheduleRules: Array.isArray(result && result.schedule) ? result.schedule : []
     };
@@ -405,6 +396,7 @@
       // localStorage values before building the new booking state.
       const handoff = readBookingHandoff();
       clearBookingLocalStorage();
+      await loadTranslations();
 
       const [serviceResult, bookingConfig, vouchers, appSettings] = await Promise.all([
         loadSalonServices(),
@@ -1108,14 +1100,23 @@
     });
   }
 
-  const translations={
-    en:{
-      'booking.back':'← Back to services','booking.eyebrow':'YOUR APPOINTMENT','booking.servicesTitle':'What would you like to book?','booking.servicesDescription':'Choose one or more services. We’ll build the appointment time for you.','booking.continue':'Continue','booking.dateTitle':'When would you like to come?','booking.dateDescription':'Pick a date, then choose a start time that fits all your selected services.','booking.availableTimes':'Available times','booking.reviewTitle':'Review your appointment','booking.reviewDescription':'Everything looks good? You can go back and change anything before confirming.','booking.schedule':'Your schedule','booking.services':'Services','booking.edit':'Edit','booking.total':'Total','booking.payAtSalon':'Pay at the salon','booking.payDescription':'No online payment is required. We’ll contact you to confirm your appointment.','booking.detailsTitle':'How can we contact you?','booking.detailsDescription':'We only need a few details to confirm your appointment.','booking.name':'Full name','booking.phone':'WhatsApp / mobile','booking.email':'Email','booking.optional':'(optional)','booking.notes':'Notes','booking.confirm':'Request appointment','booking.doneEyebrow':'ALL SET','booking.doneTitle':'Booking request received','booking.doneDescription':'Thank you. We’ll contact you to confirm your appointment.','booking.reference':'Booking reference','booking.doneButton':'Back to home'
-    },
-    ar:{
-      'booking.back':'← العودة إلى الخدمات','booking.eyebrow':'موعدك','booking.servicesTitle':'ماذا تريدين حجزه؟','booking.servicesDescription':'اختاري خدمة أو أكثر وسنرتب لكِ وقت الموعد تلقائياً.','booking.continue':'متابعة','booking.dateTitle':'متى ترغبين بالحضور؟','booking.dateDescription':'اختاري التاريخ ثم الوقت المناسب لجميع الخدمات التي اخترتها.','booking.availableTimes':'الأوقات المتاحة','booking.reviewTitle':'راجعي موعدك','booking.reviewDescription':'تأكدي من التفاصيل ويمكنك العودة لتعديل أي شيء قبل التأكيد.','booking.schedule':'جدول موعدك','booking.services':'الخدمات','booking.edit':'تعديل','booking.total':'الإجمالي','booking.payAtSalon':'الدفع في الصالون','booking.payDescription':'لا يلزم الدفع الإلكتروني. سنتواصل معك لتأكيد الموعد.','booking.detailsTitle':'كيف يمكننا التواصل معك؟','booking.detailsDescription':'نحتاج إلى بعض البيانات فقط لتأكيد موعدك.','booking.name':'الاسم الكامل','booking.phone':'الواتساب / الهاتف','booking.email':'البريد الإلكتروني','booking.optional':'(اختياري)','booking.notes':'ملاحظات','booking.confirm':'إرسال طلب الحجز','booking.doneEyebrow':'تم','booking.doneTitle':'تم استلام طلب الحجز','booking.doneDescription':'شكراً لكِ. سنتواصل معك لتأكيد الموعد.','booking.reference':'رقم الحجز','booking.doneButton':'العودة للرئيسية'
+  let translations = {};
+
+  async function loadTranslations() {
+    if (!window.salonDatabase || !window.salonDatabase.getTranslations) {
+      throw new Error('Translation database client is not available.');
     }
-  };
+    const rows = await window.salonDatabase.getTranslations();
+    translations = {};
+    (rows || []).forEach(row => {
+      if (!row || !row.key) return;
+      translations[row.key] = {
+        en: row.en == null ? '' : String(row.en),
+        ar: row.ar == null ? '' : String(row.ar)
+      };
+    });
+  }
+
 
   function isoDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
   function minutesToTime(n){return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;}

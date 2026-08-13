@@ -97,6 +97,9 @@
     .then(response => response.text())
     .then(data => {
       document.getElementById("footer-placeholder").innerHTML = data;
+      if (window.getApplicationSettings && window.applySocialLinks) {
+        window.getApplicationSettings().then(function(settings){ if (window.applyWebsiteImages) window.applyWebsiteImages(settings); window.applySocialLinks(settings.__social || {}); }).catch(function(){});
+      }
     })
     .catch(error => console.error("Error loading footer:", error));
 
@@ -122,6 +125,9 @@
       .then(response => response.text())
       .then(data => {
         document.getElementById("rdNavBar").innerHTML = data;
+        if (window.getApplicationSettings && window.applySocialLinks) {
+          window.getApplicationSettings().then(function(settings){ if (window.applyWebsiteImages) window.applyWebsiteImages(settings); window.applySocialLinks(settings.__social || {}); }).catch(function(){});
+        }
 
         // Set active nav link
         document.querySelectorAll('#rdNavBar .rd-navbar-nav a').forEach(function (link) {

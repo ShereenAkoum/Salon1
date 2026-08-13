@@ -45,14 +45,14 @@
   <main id="crm-app" class="crm-hidden">
     <div class="crm-layout">
       <aside class="crm-sidebar" id="crm-sidebar">
-        <div class="crm-side-brand"><div class="crm-brand-mark">S</div><div><strong id="crm-sidebar-website-name">Loading…</strong><span>Management</span></div></div>
+        <div class="crm-side-brand"><div class="crm-brand-mark crm-brand-mark-image"><img id="crm-sidebar-logo" alt="Website logo" hidden></div><div><strong id="crm-sidebar-website-name">Loading…</strong><span>Management</span></div></div>
         <nav class="crm-nav">
           <button class="crm-nav-item active" data-view="dashboard"><span>⌂</span> Dashboard</button>
           <button class="crm-nav-item" data-view="services"><span>✂</span> Services</button>
           <button class="crm-nav-item" data-view="vouchers"><span>◇</span> Vouchers</button>
           <button class="crm-nav-item" data-view="faqs" data-admin-only><span>?</span> FAQs</button>
           <button class="crm-nav-item" data-view="bookings"><span>◷</span> Bookings</button>
-          <button class="crm-nav-item" data-view="booking-config" data-admin-only><span>⚙</span> Booking Setup</button>
+          <button class="crm-nav-item" data-view="booking-config" data-admin-only><span>⚙</span> Booking Setup</button>           <button class="crm-nav-item" data-view="translations" data-admin-only><span>文</span> Translation</button>
           <button class="crm-nav-item" data-view="customers"><span>♙</span> Customers</button>
 <button type="button" class="crm-nav-item" data-view="settings" data-admin-only><span class="crm-nav-icon">⚙</span><span>Settings</span></button>
           <button class="crm-nav-item" data-view="users"><span>♙</span> Users & Access</button>
@@ -405,7 +405,7 @@
             <div>
               <div class="crm-section-label">Booking</div>
               <h2>Booking Setup</h2>
-              <p>Manage the schedule and content used by the public booking flow.</p>
+              <p>Manage the schedule and availability used by the public booking flow.</p>
             </div>
             <button id="booking-config-refresh" type="button" class="crm-btn crm-btn-secondary">↻ Refresh</button>
           </div>
@@ -506,33 +506,60 @@
             </div>
           </div>
 
-          <div class="crm-card" style="margin-top:20px;">
-            <div class="crm-section-label">Public booking copy</div>
-            <h2>Booking page text</h2>
-            <p class="crm-small">Edit the multilingual messages used by the booking flow. Values must be valid JSON.</p>
-            <form id="booking-text-form" class="crm-standard-form">
-              <div class="crm-form-grid">
-                <div class="crm-field" style="grid-column:1/-1;">
-                  <label for="booking-messages-json">Messages</label>
-                  <textarea id="booking-messages-json" rows="7" spellcheck="false"></textarea>
-                </div>
-                <div class="crm-field">
-                  <label for="booking-date-text-json">Date & time text</label>
-                  <textarea id="booking-date-text-json" rows="7" spellcheck="false"></textarea>
-                </div>
-                <div class="crm-field">
-                  <label for="booking-review-text-json">Review text</label>
-                  <textarea id="booking-review-text-json" rows="7" spellcheck="false"></textarea>
-                </div>
+        </section>
+
+<section id="view-translations" class="crm-view crm-hidden" data-admin-only>
+          <div class="crm-page-heading">
+            <div>
+              <div class="crm-section-label">Content</div>
+              <h2>Translation</h2>
+              <p>Manage the English and Arabic text used by the public website and booking flow. Changes are stored in Supabase.</p>
+            </div>
+          </div>
+          <div class="crm-card">
+            <div class="crm-toolbar">
+              <div>
+                <div class="crm-section-label">Translation catalogue</div>
+                <h2>Website translations</h2>
               </div>
-              <div class="crm-form-actions">
-                <button type="submit" class="crm-btn crm-btn-primary">Save booking text</button>
+              <div class="crm-toolbar-actions">
+                <input id="translation-search" class="crm-input" type="search" placeholder="Search key or text">
+                <button id="translation-add-btn" type="button" class="crm-btn crm-btn-secondary">+ Add key</button>
               </div>
-            </form>
+            </div>
+            <p class="crm-small">The HTML remains unchanged. The public site reads these values from Supabase at runtime.</p>
+            <div id="translation-form-card" class="crm-subcard crm-hidden" style="margin-top:16px">
+              <form id="translation-form" class="crm-standard-form">
+                <div class="crm-form-grid">
+                  <div class="crm-field">
+                    <label for="translation-key">Key</label>
+                    <input id="translation-key" required placeholder="booking.confirm">
+                  </div>
+                  <div class="crm-field">
+                    <label for="translation-en">English</label>
+                    <textarea id="translation-en" rows="3" required></textarea>
+                  </div>
+                  <div class="crm-field">
+                    <label for="translation-ar">Arabic</label>
+                    <textarea id="translation-ar" rows="3" required dir="rtl"></textarea>
+                  </div>
+                </div>
+                <div class="crm-actions-inline">
+                  <button id="translation-save" type="submit" class="crm-btn crm-btn-primary">Save translation</button>
+                  <button id="translation-cancel-btn" type="button" class="crm-btn crm-btn-secondary">Cancel</button>
+                </div>
+              </form>
+            </div>
+            <div class="crm-table-wrap">
+              <table class="crm-table">
+                <thead><tr><th>Key</th><th>English</th><th>Arabic</th><th></th></tr></thead>
+                <tbody id="translation-table-body"></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
-<section id="view-settings" class="crm-view crm-hidden" data-admin-only>
+        <section id="view-settings" class="crm-view crm-hidden" data-admin-only>
   <div class="crm-settings-shell">
     <div class="crm-settings-intro">
       <div>
@@ -596,6 +623,54 @@
 
           <div id="currency-options-list" class="crm-currency-list"></div>
           <div class="crm-settings-help">Tip: keep the currency code short, such as <strong>USD</strong> or <strong>QAR</strong>.</div>
+        </div>
+
+        <div class="crm-card crm-settings-card crm-social-settings-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Social &amp; messaging</div>
+              <h3>Website social links</h3>
+              <p>Active channels are shown in the website navigation and footer. Inactive channels are hidden automatically.</p>
+            </div>
+          </div>
+          <div id="social-settings-list" class="crm-social-list"></div>
+          <div class="crm-settings-help">The website already contains the social icons. The CRM only controls their links and visibility.</div>
+        </div>
+
+        <div class="crm-card crm-settings-card crm-website-images-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Website media</div>
+              <h3>Website images</h3>
+              <p>Upload the images used by the public website. Changes are saved to Supabase Storage immediately.</p>
+            </div>
+          </div>
+          <div class="crm-website-images-grid">
+            <div class="crm-site-image-card">
+              <div class="crm-site-image-preview"><img id="who-we-are-image-1-preview" alt="Who We Are image 1"></div>
+              <div class="crm-site-image-content"><strong>Who We Are — Image 1</strong><small>First image in the Who We Are section.</small><input id="who-we-are-image-1-file" type="file" accept="image/*"><div class="crm-branding-actions"><button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-who-we-are-image-1">Upload / Replace</button></div></div>
+            </div>
+            <div class="crm-site-image-card">
+              <div class="crm-site-image-preview"><img id="who-we-are-image-2-preview" alt="Who We Are image 2"></div>
+              <div class="crm-site-image-content"><strong>Who We Are — Image 2</strong><small>Second image in the Who We Are section.</small><input id="who-we-are-image-2-file" type="file" accept="image/*"><div class="crm-branding-actions"><button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-who-we-are-image-2">Upload / Replace</button></div></div>
+            </div>
+            <div class="crm-site-image-card">
+              <div class="crm-site-image-preview"><img id="who-we-are-image-3-preview" alt="Who We Are image 3"></div>
+              <div class="crm-site-image-content"><strong>Who We Are — Image 3</strong><small>Third image in the Who We Are section.</small><input id="who-we-are-image-3-file" type="file" accept="image/*"><div class="crm-branding-actions"><button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-who-we-are-image-3">Upload / Replace</button></div></div>
+            </div>
+            <div class="crm-site-image-card">
+              <div class="crm-site-image-preview crm-site-image-preview-wide"><img id="homepage-hero-image-preview" alt="Homepage hero image"></div>
+              <div class="crm-site-image-content"><strong>Homepage hero</strong><small>Main image behind the homepage headline.</small><input id="homepage-hero-image-file" type="file" accept="image/*"><div class="crm-branding-actions"><button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-homepage-hero-image">Upload / Replace</button></div></div>
+            </div>
+            <div class="crm-site-image-card">
+              <div class="crm-site-image-preview crm-site-image-preview-wide"><img id="services-section-image-preview" alt="Services section image"></div>
+              <div class="crm-site-image-content"><strong>Services section</strong><small>Background image behind the services section on the homepage.</small><input id="services-section-image-file" type="file" accept="image/*"><div class="crm-branding-actions"><button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-services-section-image">Upload / Replace</button></div></div>
+            </div>
+            <div class="crm-site-image-card">
+              <div class="crm-site-image-preview crm-site-image-preview-wide"><img id="contact-section-image-preview" alt="Contact section image"></div>
+              <div class="crm-site-image-content"><strong>Contact section</strong><small>Background image behind the contact form.</small><input id="contact-section-image-file" type="file" accept="image/*"><div class="crm-branding-actions"><button type="button" class="crm-btn crm-btn-primary crm-btn-small" id="upload-contact-section-image">Upload / Replace</button></div></div>
+            </div>
+          </div>
         </div>
 
         <div class="crm-settings-actions">

@@ -57,7 +57,13 @@
       contact_phone: String(contactPhone).trim(),
       header_image: requireImage(raw.header_image || raw.headerImage, 'header_image'),
       banner_image: requireImage(raw.banner_image || raw.bannerImage, 'banner_image'),
-      favicon_image: optionalImage(raw.favicon_image || raw.faviconImage)
+      favicon_image: optionalImage(raw.favicon_image || raw.faviconImage),
+      who_we_are_image_1: optionalImage(raw.who_we_are_image_1),
+      who_we_are_image_2: optionalImage(raw.who_we_are_image_2),
+      who_we_are_image_3: optionalImage(raw.who_we_are_image_3),
+      homepage_hero_image: optionalImage(raw.homepage_hero_image),
+      services_section_image: optionalImage(raw.services_section_image),
+      contact_section_image: optionalImage(raw.contact_section_image)
     };
   }
 
@@ -73,7 +79,14 @@
     (result.data || []).forEach(function (row) {
       settings[row.setting_key] = parseValue(row.setting_value);
     });
-    return normalizeSettings(settings);
+    var normalized = normalizeSettings(settings);
+    normalized.__social = {};
+    (result.data || []).forEach(function(row){
+      if (String(row.setting_key || '').indexOf('social_') === 0) {
+        normalized.__social[row.setting_key] = {setting_value: parseValue(row.setting_value), active: row.active !== false};
+      }
+    });
+    return normalized;
   }
 
   function escapeHtml(value) {
@@ -90,6 +103,86 @@
     });
     var oldFavicon = document.querySelector('link[data-supabase-favicon]');
     if (oldFavicon) oldFavicon.remove();
+  }
+
+  function applySocialLinks(settings) {
+    var social = {};
+    Object.keys(settings || {}).forEach(function(key) {
+      if (key.indexOf('social_') !== 0) return;
+      var slug = key.slice(7);
+      if (['whatsapp','facebook','instagram'].indexOf(slug) === -1) return;
+      var row = settings[key];
+      if (!row || row.active === false) return;
+      var value = parseValue(row.setting_value);
+      if (!value || !value.url) return;
+      social[slug] = value;
+    });
+    document.querySelectorAll('.site-social-link[data-social]').forEach(function(link) {
+      var slug = link.getAttribute('data-social');
+      var item = social[slug];
+      var visible = !!item;
+      var li = link.closest('li');
+      if (li) {
+        li.hidden = !visible;
+        li.style.display = visible ? '' : 'none';
+        li.classList.toggle('site-social-hidden', !visible);
+      }
+      link.hidden = !visible;
+      link.style.display = visible ? '' : 'none';
+      link.classList.toggle('site-social-hidden', !visible);
+      if (!visible) {
+        link.removeAttribute('href');
+        link.removeAttribute('target');
+        link.removeAttribute('rel');
+        return;
+      }
+      link.href = String(item.url);
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    });
+  }
+
+  function optionalWebsiteImage(settings, key) {
+    var value = settings && settings[key];
+    if (!value || typeof value !== 'object' || !value.url) return null;
+    return {
+      url: String(value.url),
+      width: String(value.width || 'auto'),
+      height: String(value.height || 'auto')
+    };
+  }
+
+  function applyWebsiteImages(settings) {
+    var imageKeys = ['who_we_are_image_1','who_we_are_image_2','who_we_are_image_3'];
+    imageKeys.forEach(function(key, index){
+      var image = optionalWebsiteImage(settings, key);
+      document.querySelectorAll('[data-site-image="who-we-are-' + (index + 1) + '"]').forEach(function(img){
+        if (!image) {
+          img.removeAttribute('src');
+          img.hidden = true;
+          return;
+        }
+        img.src = image.url;
+        if (image.width !== 'auto') img.style.width = image.width;
+        if (image.height !== 'auto') img.style.height = image.height;
+        img.hidden = false;
+      });
+    });
+
+    var hero = optionalWebsiteImage(settings, 'homepage_hero_image');
+    document.querySelectorAll('[data-site-background="homepage-hero"]').forEach(function(el){
+      el.style.backgroundImage = hero ? 'url("' + hero.url.replace(/"/g, '\\"') + '")' : 'none';
+    });
+
+    var services = optionalWebsiteImage(settings, 'services_section_image');
+    document.querySelectorAll('[data-site-background="services-section"]').forEach(function(el){
+      el.style.backgroundImage = services ? 'url("' + services.url.replace(/"/g, '\\"') + '")' : 'none';
+    });
+
+    var contact = optionalWebsiteImage(settings, 'contact_section_image');
+    document.querySelectorAll('[data-site-background="contact-section"]').forEach(function(el){
+      el.style.backgroundImage = contact ? 'url("' + contact.url.replace(/"/g, '\\"') + '")' : 'none';
+    });
   }
 
   function applyBranding(settings) {
@@ -126,12 +219,16 @@
   }
 
   window.applyApplicationBranding = applyBranding;
+  window.applyWebsiteImages = applyWebsiteImages;
+  window.applySocialLinks = applySocialLinks;
 
   window.applicationSettingsReady = (async function () {
     clearBranding();
     try {
       var settings = await loadFromSupabase();
       applyBranding(settings);
+      applyWebsiteImages(settings);
+      applySocialLinks(settings.__social || {});
       document.dispatchEvent(new CustomEvent('applicationSettingsLoaded', { detail: settings }));
       console.info('[Application settings] Loaded from Supabase.', settings.website_name, settings.header_image.url, settings.banner_image.url);
       return settings;
