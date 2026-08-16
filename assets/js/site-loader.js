@@ -90,6 +90,11 @@
       Array.from(temp.childNodes).forEach(function (node) {
         document.head.appendChild(node.cloneNode(true));
       });
+      if (window.getApplicationSettings && window.applyApplicationBranding) {
+        window.getApplicationSettings().then(function (settings) {
+          window.applyApplicationBranding(settings);
+        }).catch(function () {});
+      }
     })
     .catch(error => console.error("Error loading seo head:", error));
 

@@ -200,7 +200,39 @@
       link.dataset.supabaseFavicon = 'true';
       document.head.appendChild(link);
     }
-    document.querySelectorAll('[data-website-name]').forEach(function (el) { el.innerHTML = '<span class="logo-glow">' + escapeHtml(settings.website_name) + '</span>'; });
+    document.querySelectorAll('[data-website-name]').forEach(function (el) {
+      el.textContent = settings.website_name;
+      el.setAttribute('aria-label', settings.website_name);
+    });
+
+    // Keep SEO/social metadata in sync with the CRM website name. The SEO
+    // fragment is injected dynamically by site-loader.js, so this is safe to
+    // run whenever branding is applied or re-applied.
+    var websiteName = settings.website_name;
+    var titleSuffix = ' – Luxury Hair & Beauty Salon';
+    document.querySelectorAll('meta[data-website-meta="description"]').forEach(function (meta) {
+      meta.setAttribute('content', websiteName + ' – Professional hair, beauty, styling and salon services.');
+    });
+    document.querySelectorAll('meta[data-website-meta="keywords"]').forEach(function (meta) {
+      var content = meta.getAttribute('content') || '';
+      var keywordList = content.split(',').map(function (item) { return item.trim(); }).filter(Boolean);
+      if (keywordList.map(function (item) { return item.toLowerCase(); }).indexOf(websiteName.toLowerCase()) === -1) {
+        keywordList.splice(2, 0, websiteName);
+      }
+      meta.setAttribute('content', keywordList.join(', '));
+    });
+    document.querySelectorAll('meta[data-website-meta="og-title"]').forEach(function (meta) {
+      meta.setAttribute('content', websiteName + titleSuffix);
+    });
+    document.querySelectorAll('meta[data-website-meta="og-description"]').forEach(function (meta) {
+      meta.setAttribute('content', websiteName + ' offers professional hair, beauty, styling and salon services.');
+    });
+    document.querySelectorAll('meta[data-website-meta="og-site-name"]').forEach(function (meta) {
+      meta.setAttribute('content', websiteName);
+    });
+    document.querySelectorAll('meta[data-website-meta="item-name"]').forEach(function (meta) {
+      meta.setAttribute('content', websiteName + ' – Hair & Beauty Salon');
+    });
     var header = settings.header_image;
     var bannerImage = settings.banner_image;
 

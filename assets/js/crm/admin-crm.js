@@ -2,7 +2,7 @@
   'use strict';
 
   var passwordSetupMode = 'invite';
-  var state = { customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], roles: [], permissions: [], access: {}, rolePermissions: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, editingFaqId: null, faqs: [], faqSettings: null, translations: [], editingTranslationKey: null, currentView: 'dashboard', currentRole: null, currentUserId: null, mustChangePassword: false };
+  var state = { authStatuses: {}, customers: [], editingCustomerId: null, selectedCustomerId: null, categories: [], services: [], vouchers: [], users: [], roles: [], permissions: [], access: {}, rolePermissions: [], appSettings: [], bookings: [], bookingFilter: 'all', bookingDateFilter: 'all', bookingSearch: '', bookingVouchers: [], bookingView: 'list', scheduleDate: new Date(), editingServiceId: null, editingCategoryId: null, editingVoucherId: null, editingUserId: null, editingFaqId: null, faqs: [], faqSettings: null, translations: [], editingTranslationKey: null, currentView: 'dashboard', currentRole: null, currentUserId: null, mustChangePassword: false };
   var CRM_INVITE_REDIRECT = window.location.origin + window.location.pathname + '?invite=1';
 
   function $(id) { return document.getElementById(id); }
@@ -1247,7 +1247,14 @@
     }
     var result = await window.salonSupabase.from('admin_users').select('*').order('created_at',{ascending:true});
     if (result.error) throw result.error;
-    state.users=result.data||[]; renderUsers();
+    state.users=result.data||[];
+    state.authStatuses={};
+    try {
+      var authResult=await window.salonSupabase.functions.invoke('get-crm-user-statuses',{body:{}});
+      if(authResult.error) throw new Error((authResult.data&&authResult.data.error)||authResult.error.message||'Could not load authentication status.');
+      (authResult.data&&authResult.data.users||[]).forEach(function(item){state.authStatuses[String(item.user_id)]=item;});
+    } catch(statusError) { console.warn('Could not load Supabase authentication statuses:',statusError); }
+    renderUsers();
     $('stat-users') && ($('stat-users').textContent=state.users.length);
     $('stat-bookings') && ($('stat-bookings').textContent=state.bookings.length);
   }
@@ -1636,13 +1643,15 @@
       var role=roleNameById(u.role_id, u.role);
       var status=u.active!==false;
       var isSelf=state.currentUserId && String(u.user_id)===String(state.currentUserId);
+      var auth=state.authStatuses[String(u.user_id)]||{};
+      var verified=!!auth.email_confirmed_at;
+      var loggedIn=!!auth.last_sign_in_at;
+      var verificationHtml=verified ? '<span class="crm-badge active">Verified</span>' : '<span class="crm-badge inactive">Not verified</span>';
+      var loginHtml=loggedIn ? '<span class="crm-small">Last login: '+escapeHtml(new Date(auth.last_sign_in_at).toLocaleString())+'</span>' : '<span class="crm-small">Never logged in</span>';
       return '<tr><td><strong>'+escapeHtml(u.full_name||'CRM user')+'</strong><br><span class="crm-small">'+(isSelf?'You':'CRM team member')+'</span></td><td>'+escapeHtml(u.email||'—')+'</td>'+
       '<td><span class="crm-role-badge">'+escapeHtml(role)+'</span></td>'+
-      '<td>'+(status?'<span class="crm-badge active">Active</span>':'<span class="crm-badge inactive">Inactive</span>')+'</td>'+
-      '<td>'+escapeHtml(u.created_at?new Date(u.created_at).toLocaleDateString():'—')+'</td>'+
-      '<td><div class="crm-actions-inline"><button type="button" class="crm-btn crm-btn-secondary crm-btn-small" data-edit-user="'+escapeHtml(u.user_id)+'">Edit</button>'+
-      (isSelf?'':'<button type="button" class="crm-btn '+(status?'crm-btn-danger':'crm-btn-secondary')+' crm-btn-small" data-toggle-user="'+escapeHtml(u.user_id)+'">'+(status?'Deactivate':'Activate')+'</button>')+
-      '</div></td></tr>';
+      '<td>'+(status?'<span class="crm-badge active">Active</span>':'<span class="crm-badge inactive">Inactive</span>')+'<br>'+verificationHtml+'<br>'+loginHtml+'</td>'+
+      '<td>'+escapeHtml(u.created_at?new Date(u.created_at).toLocaleDateString():'—')+'</td>'+      '<td><div class="crm-actions-inline"><button type="button" class="crm-btn crm-btn-secondary crm-btn-small" data-edit-user="'+escapeHtml(u.user_id)+'">Edit</button>'+      (isSelf?'':'<button type="button" class="crm-btn '+(status?'crm-btn-danger':'crm-btn-secondary')+' crm-btn-small" data-toggle-user="'+escapeHtml(u.user_id)+'">'+(status?'Deactivate':'Activate')+'</button>')+      (!isSelf && can('users','update') ? '<button type="button" class="crm-btn crm-btn-secondary crm-btn-small" data-reset-password="'+escapeHtml(u.user_id)+'">Reset password</button>' : '')+      (can('users','delete') && !isSelf ? '<button type="button" class="crm-btn crm-btn-danger crm-btn-small" data-delete-user="'+escapeHtml(u.user_id)+'">Delete</button>' : '')+      '</div></td></tr>';
     }).join('') || '<tr><td colspan="6">No CRM users found.</td></tr>';
   }
   async function updateDashboard() {
@@ -2648,8 +2657,77 @@
     if(result.error){message(result.error.message,'error');return;}
     message(next?'User activated.':'User deactivated.','success');await loadUsers();
   }
+
+  async function resetUserPassword(id){
+    if(!can('users','update')){message('You do not have permission to reset CRM user passwords.','error');return;}
+    if(String(id)===String(state.currentUserId)){message('Use the normal forgot-password flow to reset your own password.','error');return;}
+    var u=state.users.find(function(x){return String(x.user_id)===String(id);}); if(!u)return;
+    if(u.active===false){message('Activate the CRM user before sending a password reset.','error');return;}
+    if(!window.confirm('Send a password reset email to '+(u.email||'this user')+'?'))return;
+    try{
+      var redirectTo=window.location.origin+window.location.pathname;
+      var result=await window.salonSupabase.functions.invoke('reset-crm-user-password',{body:{user_id:id,redirect_to:redirectTo}});
+      if(result.error)throw new Error((result.data&&result.data.error)||result.error.message||'Could not send password reset email.');
+      if(!result.data||result.data.ok!==true)throw new Error((result.data&&result.data.error)||'Could not send password reset email.');
+      message('Password reset email sent to '+(u.email||'the user')+'.','success');
+    }catch(err){console.error('Could not send CRM password reset:',err);message(err.message||'Could not send password reset email.','error');}
+  }
+  async function deleteUser(id){
+    if(!can('users','delete')){
+      message('You do not have permission to delete CRM users.','error');
+      return;
+    }
+    if(String(id)===String(state.currentUserId)){
+      message('You cannot delete your own CRM account.','error');
+      return;
+    }
+
+    var u=state.users.find(function(x){return String(x.user_id)===String(id);});
+    if(!u) return;
+
+    var displayName=u.full_name || u.email || 'this user';
+    var confirmed=window.confirm(
+      'Delete "'+displayName+'" permanently?\n\n'+
+      'This removes the user from Supabase Authentication and the CRM.'
+    );
+    if(!confirmed) return;
+
+    try{
+      var result=await window.salonSupabase.functions.invoke('delete-crm-user',{
+        body:{user_id:id}
+      });
+
+      if(result.error){
+        throw new Error(
+          (result.data && result.data.error) ||
+          result.error.message ||
+          'Could not delete the CRM user.'
+        );
+      }
+
+      if(!result.data || result.data.ok!==true){
+        throw new Error(
+          (result.data && result.data.error) ||
+          'Could not delete the CRM user.'
+        );
+      }
+
+      state.editingUserId=null;
+      var editCard=$('user-edit-card');
+      if(editCard) editCard.classList.add('crm-hidden');
+
+      message('CRM user deleted successfully.','success');
+      await loadUsers();
+    }catch(err){
+      console.error('Could not delete CRM user:',err);
+      message(err.message || 'Could not delete the CRM user.','error');
+    }
+  }
   function isInviteSetup(){
     return new URLSearchParams(window.location.search).get('invite')==='1';
+  }
+  function isPasswordRecovery(){
+    return new URLSearchParams(window.location.search).get('recovery')==='1';
   }
 
   // Supabase can receive an invitation while another CRM user is already
@@ -2791,6 +2869,10 @@
       if (title) title.textContent = 'Change your temporary password';
       if (subtitle) subtitle.textContent = 'An administrator set a temporary password for this account. You must choose a new password before you can enter the CRM.';
       if (button) button.innerHTML = 'Change password <span>→</span>';
+    } else if (passwordSetupMode === 'recovery') {
+      if (title) title.textContent = 'Reset your password';
+      if (subtitle) subtitle.textContent = 'Choose a new password to regain access to your salon CRM account.';
+      if (button) button.innerHTML = 'Set new password <span>→</span>';
     } else {
       if (title) title.textContent = 'Create your password';
       if (subtitle) subtitle.textContent = 'Your invitation is confirmed. Choose a password to finish setting up your CRM account.';
@@ -2972,7 +3054,7 @@
     document.addEventListener('keydown',function(e){if(e.key==='Escape')closeBookingDetail();});
 
     $('service-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-service]');if(b)editService(b.getAttribute('data-edit-service'));var d=e.target.closest('[data-delete-service]');if(d)deleteService(d.getAttribute('data-delete-service'));});
-    $('category-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-category]');if(b)editCategory(b.getAttribute('data-edit-category'));var d=e.target.closest('[data-delete-category]');if(d)deleteCategory(d.getAttribute('data-delete-category'));}); $('users-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-user]');if(edit)editUser(edit.getAttribute('data-edit-user'));var toggle=e.target.closest('[data-toggle-user]');if(toggle)toggleUser(toggle.getAttribute('data-toggle-user'));});
+    $('category-table-body').addEventListener('click',function(e){var b=e.target.closest('[data-edit-category]');if(b)editCategory(b.getAttribute('data-edit-category'));var d=e.target.closest('[data-delete-category]');if(d)deleteCategory(d.getAttribute('data-delete-category'));}); $('users-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-user]');if(edit){editUser(edit.getAttribute('data-edit-user'));return;}var toggle=e.target.closest('[data-toggle-user]');if(toggle){toggleUser(toggle.getAttribute('data-toggle-user'));return;}var reset=e.target.closest('[data-reset-password]');if(reset){resetUserPassword(reset.getAttribute('data-reset-password'));return;}var del=e.target.closest('[data-delete-user]');if(del)deleteUser(del.getAttribute('data-delete-user'));});
     $('voucher-form').addEventListener('submit',saveVoucher);
     $('voucher-reset').addEventListener('click',resetVoucherForm);
     $('voucher-cancel').addEventListener('click',function(){$('voucher-form-card').classList.add('crm-hidden');state.editingVoucherId=null;});
@@ -2988,6 +3070,20 @@
     try{
       var sessionResult=await window.salonSupabase.auth.getSession();
       var session=sessionResult.data.session;
+
+      if(isPasswordRecovery()){
+        try{ await window.salonSupabase.auth.signOut({scope:'local'}); }catch(_){}
+        var recoveryArtifact=getInviteArtifact();
+        if(recoveryArtifact.code){
+          var recoveryExchange=await window.salonSupabase.auth.exchangeCodeForSession(recoveryArtifact.code);
+          if(recoveryExchange.error) throw recoveryExchange.error;
+        }
+        var recoverySession=await waitForAuthSession(5000);
+        if(!recoverySession){showLogin();message('This password reset link is missing or has expired. Please request a new reset email.','error');return;}
+        state.currentUserId=recoverySession.user.id;
+        showPasswordSetup('recovery');
+        return;
+      }
 
       if(isInviteSetup()){
         // Invitation flow has priority over normal CRM authorization.  This is
