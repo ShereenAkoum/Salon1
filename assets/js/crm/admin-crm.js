@@ -2651,6 +2651,134 @@
   function isInviteSetup(){
     return new URLSearchParams(window.location.search).get('invite')==='1';
   }
+
+  // Supabase can receive an invitation while another CRM user is already
+  // signed in in the same browser.  The invitation must take ownership of
+  // the browser session before we allow password setup; otherwise the old
+  // user's session can be mistaken for the invited user's session.
+  function getInviteArtifact(){
+    var params = new URLSearchParams(window.location.search);
+    var hash = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    return {
+      code: params.get('code'),
+      accessToken: hash.get('access_token'),
+      refreshToken: hash.get('refresh_token'),
+      type: hash.get('type'),
+      hasHashAuth: !!(hash.get('access_token') || hash.get('refresh_token') || hash.get('type')),
+      hasAuthArtifact: !!(params.get('code') || hash.get('access_token') || hash.get('refresh_token'))
+    };
+  }
+
+  function decodeJwtPayload(token){
+    try{
+      var part=String(token||'').split('.')[1];
+      if(!part) return null;
+      var base64=part.replace(/-/g,'+').replace(/_/g,'/');
+      while(base64.length%4) base64+='=';
+      return JSON.parse(atob(base64));
+    }catch(_){ return null; }
+  }
+
+  function inviteMarkerKey(){
+    return 'salon_crm_invite_user_id';
+  }
+
+  function getInviteMarker(){
+    try{return sessionStorage.getItem(inviteMarkerKey())||'';}catch(_){return '';}
+  }
+
+  function setInviteMarker(userId){
+    try{sessionStorage.setItem(inviteMarkerKey(),String(userId||''));}catch(_){}
+  }
+
+  function clearInviteMarker(){
+    try{sessionStorage.removeItem(inviteMarkerKey());}catch(_){}
+  }
+
+  async function waitForAuthSession(timeoutMs){
+    var deadline=Date.now()+(timeoutMs||5000);
+    var last=null;
+    while(Date.now()<deadline){
+      try{
+        var result=await window.salonSupabase.auth.getSession();
+        last=result&&result.data?result.data.session:null;
+        if(last) return last;
+      }catch(_){}
+      await new Promise(function(resolve){setTimeout(resolve,100);});
+    }
+    return last;
+  }
+
+  async function establishInviteSession(){
+    var artifact=getInviteArtifact();
+    var existing=(await window.salonSupabase.auth.getSession()).data.session;
+
+    // If this is a real invitation artifact, do not let a previously logged-in
+    // CRM account win the race.  Explicitly sign it out before applying the
+    // invitation token/code.
+    if(artifact.hasAuthArtifact){
+      // createClient() may already have consumed the invite URL by the time
+      // this function runs. Reuse that session when it is demonstrably the
+      // invitation session instead of signing it out and trying to exchange a
+      // one-time PKCE code a second time.
+      if(existing && artifact.accessToken){
+        var existingPayload=decodeJwtPayload(artifact.accessToken);
+        if(!existingPayload || !existingPayload.sub || String(existingPayload.sub)===String(existing.user.id)){
+          setInviteMarker(existing.user.id);
+          return existing;
+        }
+      }
+      if(existing && artifact.code){
+        // A PKCE invitation code is one-time-use. If Supabase has already
+        // exchanged it, getSession() is the authoritative result.
+        setInviteMarker(existing.user.id);
+        return existing;
+      }
+
+      if(existing) {
+        try{ await window.salonSupabase.auth.signOut({scope:'local'}); }catch(_){}
+      }
+
+      if(artifact.accessToken && artifact.refreshToken){
+        var setResult=await window.salonSupabase.auth.setSession({
+          access_token:artifact.accessToken,
+          refresh_token:artifact.refreshToken
+        });
+        if(setResult.error) throw setResult.error;
+      } else if(artifact.code){
+        var exchangeResult=await window.salonSupabase.auth.exchangeCodeForSession(artifact.code);
+        if(exchangeResult.error) throw exchangeResult.error;
+      }
+
+      var invitedSession=await waitForAuthSession(5000);
+      if(!invitedSession) throw new Error('This invitation could not be activated. Please open the latest invitation email again.');
+
+      // If an implicit-flow access token is available, verify the session is
+      // the user encoded in that token. This prevents an old browser session
+      // from ever reaching the password form.
+      if(artifact.accessToken){
+        var payload=decodeJwtPayload(artifact.accessToken);
+        if(payload && payload.sub && String(payload.sub)!==String(invitedSession.user.id)){
+          await window.salonSupabase.auth.signOut({scope:'local'});
+          throw new Error('The invitation session could not be verified. Please open the latest invitation email again.');
+        }
+      }
+
+      setInviteMarker(invitedSession.user.id);
+      return invitedSession;
+    }
+
+    // On refresh after Supabase has consumed the invite URL, the marker tells
+    // us which authenticated user is allowed to remain on the password form.
+    var marker=getInviteMarker();
+    if(!marker) return null;
+    var session=await waitForAuthSession(2500);
+    if(!session || String(session.user.id)!==String(marker)){
+      clearInviteMarker();
+      return null;
+    }
+    return session;
+  }
   function showPasswordSetup(mode){
     passwordSetupMode = mode || 'invite';
     $('crm-login').classList.add('crm-hidden');
@@ -2681,6 +2809,15 @@
     var button=e.submitter;
     if(button){button.disabled=true;button.textContent='Saving…';}
     try{
+      if (passwordSetupMode === 'invite') {
+        var setupSessionResult=await window.salonSupabase.auth.getSession();
+        var setupSession=setupSessionResult.data&&setupSessionResult.data.session;
+        var invitedUserId=getInviteMarker();
+        if(!setupSession || !invitedUserId || String(setupSession.user.id)!==String(invitedUserId)){
+          passwordSetupMessage('Your invitation session is no longer active. Please open the latest invitation email again.','error');
+          return;
+        }
+      }
       var result;
       if (passwordSetupMode === 'forced') {
         result = await window.salonSupabase.functions.invoke('complete-crm-password-change', {body:{password:password}});
@@ -2693,7 +2830,9 @@
         result=await window.salonSupabase.auth.updateUser({password:password});
         if(result.error){passwordSetupMessage(result.error.message,'error');return;}
       }
+      clearInviteMarker();
       history.replaceState({},document.title,window.location.pathname);
+      if (window.location.hash) history.replaceState({},document.title,window.location.pathname);
       $('crm-password-setup').classList.add('crm-hidden');
       if(!(await requireAdmin())){await window.salonSupabase.auth.signOut();showLogin();message('This account is not authorized for the salon CRM.','error');return;}
       var sessionNow=await window.salonSupabase.auth.getSession();
@@ -2727,6 +2866,7 @@
   }
   async function login(e){
     e.preventDefault();clearMessage();
+    clearInviteMarker();
     var result=await window.salonSupabase.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
     if(result.error){message(result.error.message,'error');return;}
 
@@ -2848,9 +2988,29 @@
     try{
       var sessionResult=await window.salonSupabase.auth.getSession();
       var session=sessionResult.data.session;
-      if(isInviteSetup() && session){
-        state.currentUserId=session.user.id;showPasswordSetup();
-      } else if(await requireAdmin()){
+
+      if(isInviteSetup()){
+        // Invitation flow has priority over normal CRM authorization.  This is
+        // critical when a different CRM user was already logged into this
+        // browser: the invite session must be established first.
+        var inviteSession=await establishInviteSession();
+        if(inviteSession){
+          state.currentUserId=inviteSession.user.id;
+          showPasswordSetup('invite');
+          return;
+        }
+
+        // Never fall through to the normal CRM login with an unrelated old
+        // session when an invitation URL is present. That old session would
+        // make the invitation appear to work for the wrong account.
+        try{ await window.salonSupabase.auth.signOut({scope:'local'}); }catch(_){}
+        showLogin();
+        message('This invitation link is missing or has expired. Please open the latest invitation email again.','error');
+        return;
+      }
+
+      if(await requireAdmin()){
+        session=(await window.salonSupabase.auth.getSession()).data.session;
         state.currentUserId=session&&session.user?session.user.id:null;
         await loadAccess();
         if(state.mustChangePassword){ showPasswordSetup('forced'); return; }
@@ -2866,7 +3026,7 @@
         restoreLastView();
         showApp();
       } else showLogin();
-    } catch(e){console.error(e);showLogin();}
+    } catch(e){console.error(e);showLogin();message(e&&e.message?e.message:'Could not initialize CRM authentication.','error');}
     finally {
       document.documentElement.classList.remove('crm-auth-pending');
     }
