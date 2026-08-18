@@ -636,6 +636,19 @@
           <div class="crm-settings-help">Tip: keep the currency code short, such as <strong>USD</strong> or <strong>QAR</strong>.</div>
         </div>
 
+        <div class="crm-card crm-settings-card crm-loyalty-settings-card">
+          <div class="crm-settings-card-head">
+            <div>
+              <div class="crm-settings-kicker">Customer loyalty</div>
+              <h3>Rewards &amp; redemption rules</h3>
+              <p>Choose how many points a customer spends and what reward they receive. These rules appear automatically in the customer profile.</p>
+            </div>
+            <button type="button" class="crm-btn crm-btn-secondary crm-btn-small" id="add-loyalty-reward">+ Add reward</button>
+          </div>
+          <div id="loyalty-reward-settings-list" class="crm-loyalty-reward-settings-list"></div>
+          <div class="crm-settings-help">Example: <strong>100</strong> points → <strong>$10 reward</strong>. Changes take effect for all customer profiles after you save settings.</div>
+        </div>
+
         <div class="crm-card crm-settings-card crm-social-settings-card">
           <div class="crm-settings-card-head">
             <div>
@@ -882,8 +895,8 @@
   <div class="crm-card">
     <div class="crm-table-wrap">
       <table class="crm-table">
-        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Internal CRM notes</th><th></th></tr></thead>
-        <tbody id="customers-table-body"><tr><td colspan="5">Loading customers…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Loyalty</th><th>Internal CRM notes</th><th></th></tr></thead>
+        <tbody id="customers-table-body"><tr><td colspan="6">Loading customers…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -901,6 +914,27 @@
     <div class="crm-stats-grid">
       <div class="crm-stat"><span>Bookings</span><strong id="customer-booking-count">0</strong></div>
       <div class="crm-stat"><span>Total spent</span><strong>$<span id="customer-total-spent">0.00</span></strong></div>
+      <div class="crm-stat crm-loyalty-stat"><span>Loyalty points</span><strong id="customer-loyalty-points">0</strong><small id="customer-loyalty-tier">Member</small></div>
+    </div>
+    <div class="crm-detail-section crm-loyalty-panel">
+      <div class="crm-card-header crm-loyalty-header"><div><div class="crm-eyebrow">Customer rewards</div><h4>Rewards & loyalty</h4><p class="crm-small">Earn 1 point for every whole currency unit spent on a completed booking.</p></div><span id="customer-loyalty-badge" class="crm-role-badge">Member</span></div>
+      <div id="customer-loyalty-rewards" class="crm-loyalty-rewards"></div>
+      <form id="customer-loyalty-adjust-form" class="crm-loyalty-adjust">
+        <div class="crm-field"><label for="customer-loyalty-adjust-points">Adjust points</label><input id="customer-loyalty-adjust-points" type="number" step="1" placeholder="e.g. 25 or -25"></div>
+        <div class="crm-field"><label for="customer-loyalty-adjust-note">Reason</label><input id="customer-loyalty-adjust-note" required placeholder="Manual loyalty adjustment"></div>
+        <button type="submit" class="crm-btn crm-btn-primary">Apply points</button>
+      </form>
+    </div>
+    <div class="crm-detail-section crm-loyalty-history-panel">
+      <div class="crm-card-header">
+        <div><div class="crm-eyebrow">Loyalty activity</div><h4>Points history</h4><p class="crm-small">See when points were earned, adjusted, or redeemed, including what each redemption was used for.</p></div>
+      </div>
+      <div class="crm-table-wrap">
+        <table class="crm-table">
+          <thead><tr><th>Date</th><th>Activity / Used for</th><th>Points</th><th>Balance after</th></tr></thead>
+          <tbody id="customer-loyalty-history"></tbody>
+        </table>
+      </div>
     </div>
     <div class="crm-table-wrap">
       <table class="crm-table">
@@ -916,6 +950,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=crm-v21"></script>
+  <script src="assets/js/crm/admin-crm.js?v=crm-v23"></script>
 </body>
 </html>

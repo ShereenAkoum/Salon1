@@ -274,7 +274,7 @@
   async function loadCustomers() {
     var result = await window.salonSupabase
       .from('customers')
-      .select('id,name,phone,email,notes,created_at,is_deleted')
+      .select('id,name,phone,email,notes,created_at,is_deleted,loyalty_points,loyalty_lifetime_points,loyalty_tier')
       .eq('is_deleted', false)
       .order('id', {ascending:false});
     if (result.error) throw result.error;
@@ -299,12 +299,13 @@
         '<td><strong>'+escapeHtml(c.name||'—')+'</strong></td>' +
         '<td>'+escapeHtml(c.phone||'—')+'</td>' +
         '<td>'+escapeHtml(c.email||'—')+'</td>' +
+        '<td><span class="crm-role-badge">'+escapeHtml(c.loyalty_tier||'Member')+'</span> <strong>'+Number(c.loyalty_points||0)+' pts</strong></td>' +
         '<td>'+escapeHtml(c.notes||'—')+'</td>' +
         '<td><button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="viewCustomer('+Number(c.id)+')">View</button> ' +
         (can('customers','update') ? '<button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="editCustomer('+Number(c.id)+')">Edit</button>' : '') +
         (can('customers','delete') ? ' <button type="button" class="crm-btn crm-btn-danger crm-btn-sm" onclick="deleteCustomer('+Number(c.id)+')">Delete</button>' : '') + '</td>' +
         '</tr>';
-    }).join('') || '<tr><td colspan="5" class="crm-empty">No customers found.</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="crm-empty">No customers found.</td></tr>';
   }
 
   function escapeHtml(value) {
@@ -394,6 +395,7 @@
     $('customer-detail-name').textContent = c.name || 'Customer';
     $('customer-detail-contact').textContent = [c.phone, c.email].filter(Boolean).join(' • ') || 'No contact information';
     $('customer-detail-notes').textContent = c.notes || 'No notes.';
+    renderCustomerLoyalty(c);
     $('customer-detail-card').classList.remove('crm-hidden');
 
     var results = await Promise.all([
@@ -406,7 +408,12 @@
       window.salonSupabase
         .from('booking_services')
         .select('id,booking_id,service_id,start_time,end_time,price,duration_minutes,voucher_id')
-        .order('start_time', {ascending:true})
+        .order('start_time', {ascending:true}),
+      window.salonSupabase
+        .from('customer_loyalty_transactions')
+        .select('id,points,transaction_type,description,source_booking_id,created_at')
+        .eq('customer_id', c.id)
+        .order('created_at', {ascending:false})
     ]);
 
     if (results[0].error) {
@@ -417,9 +424,14 @@
       message(results[1].error.message,'error');
       return;
     }
+    if (results[2].error) {
+      message(results[2].error.message,'error');
+      return;
+    }
 
     var bookings = results[0].data || [];
     var bookingServices = results[1].data || [];
+    var loyaltyTransactions = results[2].data || [];
     var servicesById = {};
     state.services.forEach(function(service){ servicesById[String(service.id)] = service; });
     var vouchersById = {};
@@ -448,11 +460,54 @@
 
       return '<tr><td>'+escapeHtml(b.booking_date||'—')+'</td><td>'+escapeHtml((b.start_time||'')+' – '+(b.end_time||''))+'</td><td>'+escapeHtml(names||'—')+'</td><td>'+escapeHtml(b.status||'—')+'</td><td>'+Number(b.total_price||0).toFixed(2)+'</td></tr>';
     }).join('') || '<tr><td colspan="5" class="crm-empty">No bookings yet.</td></tr>';
+
+    var runningBalance = Number(c.loyalty_points || 0);
+    $('customer-loyalty-history').innerHTML = loyaltyTransactions.map(function(tx){
+      var afterBalance = runningBalance;
+      var points = Number(tx.points || 0);
+      runningBalance -= points;
+      var typeLabel = tx.transaction_type === 'reward_redeemed' ? 'Reward redeemed' : (tx.transaction_type === 'booking_earned' ? 'Points earned' : 'Manual adjustment');
+      var pointsLabel = (points > 0 ? '+' : '') + points + ' pts';
+      var date = tx.created_at ? new Date(tx.created_at).toLocaleString() : '—';
+      var rowClass = tx.transaction_type === 'reward_redeemed' ? ' class="crm-loyalty-redeemed"' : '';
+      return '<tr'+rowClass+'><td>'+escapeHtml(date)+'</td><td><strong>'+escapeHtml(typeLabel)+'</strong><div class="crm-small">'+escapeHtml(tx.description || '—')+'</div></td><td><strong>'+escapeHtml(pointsLabel)+'</strong></td><td>'+escapeHtml(String(afterBalance))+' pts</td></tr>';
+    }).join('') || '<tr><td colspan="4" class="crm-empty">No loyalty activity yet.</td></tr>';
   }
 
   function closeCustomerDetails() {
     state.selectedCustomerId = null;
     $('customer-detail-card').classList.add('crm-hidden');
+  }
+
+  function renderCustomerLoyalty(c) {
+    var points = Number(c.loyalty_points || 0);
+    var tier = c.loyalty_tier || 'Member';
+    $('customer-loyalty-points').textContent = String(points);
+    $('customer-loyalty-tier').textContent = tier + ' • ' + Number(c.loyalty_lifetime_points || 0) + ' lifetime pts';
+    $('customer-loyalty-badge').textContent = tier;
+    renderCustomerLoyaltyRewards(points);
+  }
+
+  async function changeCustomerLoyalty(points, description, type) {
+    if (!state.selectedCustomerId) return;
+    if (!requirePermission('customers','update','You do not have permission to manage customer loyalty.')) return;
+    var result = await window.salonSupabase.rpc('crm_adjust_customer_loyalty', {
+      p_customer_id: Number(state.selectedCustomerId),
+      p_points: Number(points),
+      p_description: description,
+      p_transaction_type: type || 'manual_adjustment'
+    });
+    if (result.error) { message(result.error.message || 'Could not update loyalty points.','error'); return; }
+    var data = result.data || {};
+    var c = state.customers.find(function(x){ return String(x.id) === String(state.selectedCustomerId); });
+    if (c) {
+      c.loyalty_points = Number(data.points || 0);
+      c.loyalty_lifetime_points = Number(data.lifetime_points || c.loyalty_lifetime_points || 0);
+      c.loyalty_tier = data.tier || c.loyalty_tier || 'Member';
+      renderCustomerLoyalty(c); renderCustomers();
+      viewCustomer(c.id);
+    }
+    message(description + '.','success');
   }
 
 
@@ -898,6 +953,72 @@
     });
   }
 
+  var DEFAULT_LOYALTY_REWARDS = [
+    {points:100, reward:'$10 reward'},
+    {points:250, reward:'$30 reward'},
+    {points:500, reward:'$70 reward'}
+  ];
+
+  function normalizeLoyaltyRewards(value) {
+    var parsed = value;
+    if (typeof parsed === 'string') {
+      try { parsed = JSON.parse(parsed); } catch (e) { parsed = []; }
+    }
+    if (!Array.isArray(parsed)) parsed = [];
+    var cleaned = parsed.map(function(item){
+      return {points:Number(item && item.points), reward:String(item && item.reward || '').trim()};
+    }).filter(function(item){
+      return Number.isInteger(item.points) && item.points > 0 && item.reward;
+    });
+    return cleaned.length ? cleaned : DEFAULT_LOYALTY_REWARDS.map(function(item){ return {points:item.points,reward:item.reward}; });
+  }
+
+  function loyaltyRewardsSetting() {
+    return settingValue('loyalty_rewards', DEFAULT_LOYALTY_REWARDS);
+  }
+
+  function renderLoyaltyRewardSettings() {
+    var container = $('loyalty-reward-settings-list');
+    if (!container) return;
+    var rewards = normalizeLoyaltyRewards(loyaltyRewardsSetting());
+    container.innerHTML = rewards.map(function(item,index){
+      return '<div class="crm-loyalty-reward-setting-row" data-loyalty-reward-row>'+
+        '<div class="crm-field"><label>Points to redeem</label><input type="number" min="1" step="1" data-loyalty-reward-points value="'+escapeHtml(String(item.points))+'" placeholder="100"></div>'+
+        '<div class="crm-field"><label>Reward</label><input type="text" maxlength="120" data-loyalty-reward-label value="'+escapeHtml(item.reward)+'" placeholder="$10 reward or Free haircut"></div>'+
+        '<button type="button" class="crm-btn crm-btn-secondary crm-btn-small crm-loyalty-remove-reward" data-remove-loyalty-reward aria-label="Remove reward '+(index+1)+'">Remove</button>'+
+      '</div>';
+    }).join('');
+  }
+
+  function collectLoyaltyRewards() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('[data-loyalty-reward-row]'));
+    var seen = {};
+    var rewards = [];
+    rows.forEach(function(row){
+      var points = Number(row.querySelector('[data-loyalty-reward-points]') && row.querySelector('[data-loyalty-reward-points]').value);
+      var reward = String((row.querySelector('[data-loyalty-reward-label]') && row.querySelector('[data-loyalty-reward-label]').value) || '').trim();
+      if (!Number.isInteger(points) || points <= 0) throw new Error('Each loyalty reward must have a whole number of points greater than 0.');
+      if (!reward) throw new Error('Each loyalty reward must have a reward description.');
+      if (seen[points]) throw new Error('Each loyalty reward must use a different points value.');
+      seen[points] = true;
+      rewards.push({points:points,reward:reward});
+    });
+    if (!rewards.length) throw new Error('Add at least one loyalty reward, or keep the default rewards.');
+    rewards.sort(function(a,b){ return a.points-b.points; });
+    return rewards;
+  }
+
+  function renderCustomerLoyaltyRewards(points) {
+    var container = $('customer-loyalty-rewards');
+    if (!container) return;
+    var rewards = normalizeLoyaltyRewards(loyaltyRewardsSetting());
+    container.innerHTML = rewards.map(function(item){
+      var disabled = points < item.points ? ' disabled' : '';
+      var title = points < item.points ? 'Not enough points' : 'Redeem this reward';
+      return '<button type="button" class="crm-btn crm-btn-secondary crm-reward-btn" data-reward-points="'+item.points+'" data-reward-label="'+escapeHtml(item.reward)+'" title="'+escapeHtml(title)+'"'+disabled+'>Redeem '+item.points+' pts → '+escapeHtml(item.reward)+'</button>';
+    }).join('');
+  }
+
   function renderApplicationSettings() {
     var currency = settingValue('display_currency', 'USD');
     var options = normalizeCurrencyOptions(settingValue('currency_options', {
@@ -929,6 +1050,7 @@
     renderCurrencyOptions(options);
     renderBrandingSettings();
     renderSocialSettings();
+    renderLoyaltyRewardSettings();
 
     var status = $('app-settings-status');
     if (status) status.textContent = 'Synced with Supabase';
@@ -1012,6 +1134,14 @@
       return;
     }
 
+    var loyaltyRewards;
+    try {
+      loyaltyRewards = collectLoyaltyRewards();
+    } catch (err) {
+      message(err.message,'error');
+      return;
+    }
+
     var settings = [
       {key:'website_name', value:websiteName, description:'Public website name used across the website and browser title.'},
       {key:'display_currency', value:currency, description:'Default website display currency.'},
@@ -1020,7 +1150,8 @@
       {key:'contact_phone', value:contactPhone, description:'Public contact phone number used across the website.'},
       {key:'header_image', value:headerImage, description:'Website header image and display dimensions.'},
       {key:'banner_image', value:bannerImage, description:'Website page banner image and display dimensions.'},
-      {key:'favicon_image', value:faviconImage, description:'Website favicon shown in the browser tab.'}
+      {key:'favicon_image', value:faviconImage, description:'Website favicon shown in the browser tab.'},
+      {key:'loyalty_rewards', value:loyaltyRewards, description:'Customer loyalty reward redemption rules: points required and reward description.'}
     ].concat(socialSettings);
 
     var button = $('save-application-settings');
@@ -3011,7 +3142,7 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);$('upload-header-image').addEventListener('click',function(){uploadBrandingImage('header_image','header-image-file').catch(function(e){message(e.message,'error');});});$('delete-header-image').addEventListener('click',function(){deleteBrandingImage('header_image').catch(function(e){message(e.message,'error');});});$('upload-banner-image').addEventListener('click',function(){uploadBrandingImage('banner_image','banner-image-file').catch(function(e){message(e.message,'error');});});$('delete-banner-image').addEventListener('click',function(){deleteBrandingImage('banner_image').catch(function(e){message(e.message,'error');});});$('upload-favicon-image').addEventListener('click',function(){uploadBrandingImage('favicon_image','favicon-image-file',2).catch(function(e){message(e.message,'error');});});$('delete-favicon-image').addEventListener('click',function(){deleteBrandingImage('favicon_image').catch(function(e){message(e.message,'error');});});
+    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('customer-loyalty-rewards').addEventListener('click',function(e){var btn=e.target.closest('.crm-reward-btn');if(!btn||btn.disabled)return;var cost=Number(btn.getAttribute('data-reward-points'));var label=btn.getAttribute('data-reward-label')||'Reward';if(!window.confirm('Redeem '+cost+' points for '+label+'?'))return;changeCustomerLoyalty(-cost,'Redeemed '+label,'reward_redeemed');});$('add-loyalty-reward').addEventListener('click',function(){var container=$('loyalty-reward-settings-list');if(!container)return;var row=document.createElement('div');row.className='crm-loyalty-reward-setting-row';row.setAttribute('data-loyalty-reward-row','');row.innerHTML='<div class="crm-field"><label>Points to redeem</label><input type="number" min="1" step="1" data-loyalty-reward-points placeholder="100"></div><div class="crm-field"><label>Reward</label><input type="text" maxlength="120" data-loyalty-reward-label placeholder="$10 reward or Free haircut"></div><button type="button" class="crm-btn crm-btn-secondary crm-btn-small crm-loyalty-remove-reward" data-remove-loyalty-reward>Remove</button>';container.appendChild(row);row.querySelector('[data-loyalty-reward-points]').focus();});$('loyalty-reward-settings-list').addEventListener('click',function(e){var btn=e.target.closest('[data-remove-loyalty-reward]');if(!btn)return;var rows=document.querySelectorAll('[data-loyalty-reward-row]');if(rows.length<=1){message('Keep at least one loyalty reward.','error');return;}btn.closest('[data-loyalty-reward-row]').remove();});$('customer-loyalty-adjust-form').addEventListener('submit',function(e){e.preventDefault();var pts=Number($('customer-loyalty-adjust-points').value);var note=$('customer-loyalty-adjust-note').value.trim();if(!Number.isInteger(pts)||pts===0){message('Enter a non-zero whole number of points.','error');return;}if(!note){message('Enter a reason for the adjustment.','error');return;}changeCustomerLoyalty(pts,note,'manual_adjustment').then(function(){$('customer-loyalty-adjust-form').reset();});});$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);$('upload-header-image').addEventListener('click',function(){uploadBrandingImage('header_image','header-image-file').catch(function(e){message(e.message,'error');});});$('delete-header-image').addEventListener('click',function(){deleteBrandingImage('header_image').catch(function(e){message(e.message,'error');});});$('upload-banner-image').addEventListener('click',function(){uploadBrandingImage('banner_image','banner-image-file').catch(function(e){message(e.message,'error');});});$('delete-banner-image').addEventListener('click',function(){deleteBrandingImage('banner_image').catch(function(e){message(e.message,'error');});});$('upload-favicon-image').addEventListener('click',function(){uploadBrandingImage('favicon_image','favicon-image-file',2).catch(function(e){message(e.message,'error');});});$('delete-favicon-image').addEventListener('click',function(){deleteBrandingImage('favicon_image').catch(function(e){message(e.message,'error');});});
     WEBSITE_IMAGE_SLOTS.forEach(function(slot){
       var uploadButton = $(slot.uploadId);
       if (uploadButton) uploadButton.addEventListener('click',function(){uploadWebsiteImage(slot).catch(function(e){message(e.message,'error');});});
