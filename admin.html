@@ -882,8 +882,8 @@
   <div class="crm-card">
     <div class="crm-table-wrap">
       <table class="crm-table">
-        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Internal CRM notes</th><th></th></tr></thead>
-        <tbody id="customers-table-body"><tr><td colspan="5">Loading customers…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Loyalty</th><th>Internal CRM notes</th><th></th></tr></thead>
+        <tbody id="customers-table-body"><tr><td colspan="6">Loading customers…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -901,6 +901,31 @@
     <div class="crm-stats-grid">
       <div class="crm-stat"><span>Bookings</span><strong id="customer-booking-count">0</strong></div>
       <div class="crm-stat"><span>Total spent</span><strong>$<span id="customer-total-spent">0.00</span></strong></div>
+      <div class="crm-stat crm-loyalty-stat"><span>Loyalty points</span><strong id="customer-loyalty-points">0</strong><small id="customer-loyalty-tier">Member</small></div>
+    </div>
+    <div class="crm-detail-section crm-loyalty-panel">
+      <div class="crm-card-header crm-loyalty-header"><div><div class="crm-eyebrow">Customer rewards</div><h4>Rewards & loyalty</h4><p class="crm-small">Earn 1 point for every whole currency unit spent on a completed booking.</p></div><span id="customer-loyalty-badge" class="crm-role-badge">Member</span></div>
+      <div class="crm-loyalty-rewards">
+        <button type="button" class="crm-btn crm-btn-secondary crm-reward-btn" data-reward-points="100" data-reward-label="$10 reward">Redeem 100 pts → $10 reward</button>
+        <button type="button" class="crm-btn crm-btn-secondary crm-reward-btn" data-reward-points="250" data-reward-label="$30 reward">Redeem 250 pts → $30 reward</button>
+        <button type="button" class="crm-btn crm-btn-secondary crm-reward-btn" data-reward-points="500" data-reward-label="$70 reward">Redeem 500 pts → $70 reward</button>
+      </div>
+      <form id="customer-loyalty-adjust-form" class="crm-loyalty-adjust">
+        <div class="crm-field"><label for="customer-loyalty-adjust-points">Adjust points</label><input id="customer-loyalty-adjust-points" type="number" step="1" placeholder="e.g. 25 or -25"></div>
+        <div class="crm-field"><label for="customer-loyalty-adjust-note">Reason</label><input id="customer-loyalty-adjust-note" required placeholder="Manual loyalty adjustment"></div>
+        <button type="submit" class="crm-btn crm-btn-primary">Apply points</button>
+      </form>
+    </div>
+    <div class="crm-detail-section crm-loyalty-history-panel">
+      <div class="crm-card-header">
+        <div><div class="crm-eyebrow">Loyalty activity</div><h4>Points history</h4><p class="crm-small">See when points were earned, adjusted, or redeemed, including what each redemption was used for.</p></div>
+      </div>
+      <div class="crm-table-wrap">
+        <table class="crm-table">
+          <thead><tr><th>Date</th><th>Activity / Used for</th><th>Points</th><th>Balance after</th></tr></thead>
+          <tbody id="customer-loyalty-history"></tbody>
+        </table>
+      </div>
     </div>
     <div class="crm-table-wrap">
       <table class="crm-table">
@@ -916,6 +941,6 @@
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="assets/js/supabase-client.js"></script>
-  <script src="assets/js/crm/admin-crm.js?v=crm-v21"></script>
+  <script src="assets/js/crm/admin-crm.js?v=crm-v23"></script>
 </body>
 </html>

@@ -274,7 +274,7 @@
   async function loadCustomers() {
     var result = await window.salonSupabase
       .from('customers')
-      .select('id,name,phone,email,notes,created_at,is_deleted')
+      .select('id,name,phone,email,notes,created_at,is_deleted,loyalty_points,loyalty_lifetime_points,loyalty_tier')
       .eq('is_deleted', false)
       .order('id', {ascending:false});
     if (result.error) throw result.error;
@@ -299,12 +299,13 @@
         '<td><strong>'+escapeHtml(c.name||'—')+'</strong></td>' +
         '<td>'+escapeHtml(c.phone||'—')+'</td>' +
         '<td>'+escapeHtml(c.email||'—')+'</td>' +
+        '<td><span class="crm-role-badge">'+escapeHtml(c.loyalty_tier||'Member')+'</span> <strong>'+Number(c.loyalty_points||0)+' pts</strong></td>' +
         '<td>'+escapeHtml(c.notes||'—')+'</td>' +
         '<td><button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="viewCustomer('+Number(c.id)+')">View</button> ' +
         (can('customers','update') ? '<button type="button" class="crm-btn crm-btn-secondary crm-btn-sm" onclick="editCustomer('+Number(c.id)+')">Edit</button>' : '') +
         (can('customers','delete') ? ' <button type="button" class="crm-btn crm-btn-danger crm-btn-sm" onclick="deleteCustomer('+Number(c.id)+')">Delete</button>' : '') + '</td>' +
         '</tr>';
-    }).join('') || '<tr><td colspan="5" class="crm-empty">No customers found.</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="crm-empty">No customers found.</td></tr>';
   }
 
   function escapeHtml(value) {
@@ -394,6 +395,7 @@
     $('customer-detail-name').textContent = c.name || 'Customer';
     $('customer-detail-contact').textContent = [c.phone, c.email].filter(Boolean).join(' • ') || 'No contact information';
     $('customer-detail-notes').textContent = c.notes || 'No notes.';
+    renderCustomerLoyalty(c);
     $('customer-detail-card').classList.remove('crm-hidden');
 
     var results = await Promise.all([
@@ -406,7 +408,12 @@
       window.salonSupabase
         .from('booking_services')
         .select('id,booking_id,service_id,start_time,end_time,price,duration_minutes,voucher_id')
-        .order('start_time', {ascending:true})
+        .order('start_time', {ascending:true}),
+      window.salonSupabase
+        .from('customer_loyalty_transactions')
+        .select('id,points,transaction_type,description,source_booking_id,created_at')
+        .eq('customer_id', c.id)
+        .order('created_at', {ascending:false})
     ]);
 
     if (results[0].error) {
@@ -417,9 +424,14 @@
       message(results[1].error.message,'error');
       return;
     }
+    if (results[2].error) {
+      message(results[2].error.message,'error');
+      return;
+    }
 
     var bookings = results[0].data || [];
     var bookingServices = results[1].data || [];
+    var loyaltyTransactions = results[2].data || [];
     var servicesById = {};
     state.services.forEach(function(service){ servicesById[String(service.id)] = service; });
     var vouchersById = {};
@@ -448,11 +460,58 @@
 
       return '<tr><td>'+escapeHtml(b.booking_date||'—')+'</td><td>'+escapeHtml((b.start_time||'')+' – '+(b.end_time||''))+'</td><td>'+escapeHtml(names||'—')+'</td><td>'+escapeHtml(b.status||'—')+'</td><td>'+Number(b.total_price||0).toFixed(2)+'</td></tr>';
     }).join('') || '<tr><td colspan="5" class="crm-empty">No bookings yet.</td></tr>';
+
+    var runningBalance = Number(c.loyalty_points || 0);
+    $('customer-loyalty-history').innerHTML = loyaltyTransactions.map(function(tx){
+      var afterBalance = runningBalance;
+      var points = Number(tx.points || 0);
+      runningBalance -= points;
+      var typeLabel = tx.transaction_type === 'reward_redeemed' ? 'Reward redeemed' : (tx.transaction_type === 'booking_earned' ? 'Points earned' : 'Manual adjustment');
+      var pointsLabel = (points > 0 ? '+' : '') + points + ' pts';
+      var date = tx.created_at ? new Date(tx.created_at).toLocaleString() : '—';
+      var rowClass = tx.transaction_type === 'reward_redeemed' ? ' class="crm-loyalty-redeemed"' : '';
+      return '<tr'+rowClass+'><td>'+escapeHtml(date)+'</td><td><strong>'+escapeHtml(typeLabel)+'</strong><div class="crm-small">'+escapeHtml(tx.description || '—')+'</div></td><td><strong>'+escapeHtml(pointsLabel)+'</strong></td><td>'+escapeHtml(String(afterBalance))+' pts</td></tr>';
+    }).join('') || '<tr><td colspan="4" class="crm-empty">No loyalty activity yet.</td></tr>';
   }
 
   function closeCustomerDetails() {
     state.selectedCustomerId = null;
     $('customer-detail-card').classList.add('crm-hidden');
+  }
+
+  function renderCustomerLoyalty(c) {
+    var points = Number(c.loyalty_points || 0);
+    var tier = c.loyalty_tier || 'Member';
+    $('customer-loyalty-points').textContent = String(points);
+    $('customer-loyalty-tier').textContent = tier + ' • ' + Number(c.loyalty_lifetime_points || 0) + ' lifetime pts';
+    $('customer-loyalty-badge').textContent = tier;
+    document.querySelectorAll('.crm-reward-btn').forEach(function(btn){
+      var cost = Number(btn.getAttribute('data-reward-points') || 0);
+      btn.disabled = points < cost;
+      btn.title = points < cost ? 'Not enough points' : 'Redeem this reward';
+    });
+  }
+
+  async function changeCustomerLoyalty(points, description, type) {
+    if (!state.selectedCustomerId) return;
+    if (!requirePermission('customers','update','You do not have permission to manage customer loyalty.')) return;
+    var result = await window.salonSupabase.rpc('crm_adjust_customer_loyalty', {
+      p_customer_id: Number(state.selectedCustomerId),
+      p_points: Number(points),
+      p_description: description,
+      p_transaction_type: type || 'manual_adjustment'
+    });
+    if (result.error) { message(result.error.message || 'Could not update loyalty points.','error'); return; }
+    var data = result.data || {};
+    var c = state.customers.find(function(x){ return String(x.id) === String(state.selectedCustomerId); });
+    if (c) {
+      c.loyalty_points = Number(data.points || 0);
+      c.loyalty_lifetime_points = Number(data.lifetime_points || c.loyalty_lifetime_points || 0);
+      c.loyalty_tier = data.tier || c.loyalty_tier || 'Member';
+      renderCustomerLoyalty(c); renderCustomers();
+      viewCustomer(c.id);
+    }
+    message(description + '.','success');
   }
 
 
@@ -3011,7 +3070,7 @@
   function showApp(){$('crm-login').classList.add('crm-hidden');$('crm-app').classList.remove('crm-hidden');applyRoleVisibility();}
 
   document.addEventListener('DOMContentLoaded',async function(){
-    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);$('upload-header-image').addEventListener('click',function(){uploadBrandingImage('header_image','header-image-file').catch(function(e){message(e.message,'error');});});$('delete-header-image').addEventListener('click',function(){deleteBrandingImage('header_image').catch(function(e){message(e.message,'error');});});$('upload-banner-image').addEventListener('click',function(){uploadBrandingImage('banner_image','banner-image-file').catch(function(e){message(e.message,'error');});});$('delete-banner-image').addEventListener('click',function(){deleteBrandingImage('banner_image').catch(function(e){message(e.message,'error');});});$('upload-favicon-image').addEventListener('click',function(){uploadBrandingImage('favicon_image','favicon-image-file',2).catch(function(e){message(e.message,'error');});});$('delete-favicon-image').addEventListener('click',function(){deleteBrandingImage('favicon_image').catch(function(e){message(e.message,'error');});});
+    $('login-form').addEventListener('submit',login);$('faq-form').addEventListener('submit',saveFaq);$('faq-settings-form').addEventListener('submit',saveFaqSettings);$('faq-cancel').addEventListener('click',resetFaqForm);$('new-faq-top').addEventListener('click',startFaqCreate);$('faqs-refresh').addEventListener('click',function(){loadFaqs().catch(function(e){message(e.message,'error');});});$('faq-table-body').addEventListener('click',function(e){var edit=e.target.closest('[data-edit-faq]');if(edit)editFaq(edit.getAttribute('data-edit-faq'));var del=e.target.closest('[data-delete-faq]');if(del)deleteFaq(del.getAttribute('data-delete-faq'));});$('service-form').addEventListener('submit',saveService);$('category-form').addEventListener('submit',saveCategory);$('customer-form').addEventListener('submit',saveCustomer);$('customer-search').addEventListener('input',renderCustomers);$('customer-phone').addEventListener('input',function(){var v=this.value.replace(/[^0-9+]/g,'');if(v.indexOf('+')>0)v='+'+v.replace(/\+/g,'');if(v.charAt(0)!=='+')v=v.replace(/\+/g,'');this.value=v;});$('customer-cancel').addEventListener('click',cancelCustomerEdit);$('customer-detail-close').addEventListener('click',closeCustomerDetails);document.querySelectorAll('.crm-reward-btn').forEach(function(btn){btn.addEventListener('click',function(){var cost=Number(btn.getAttribute('data-reward-points'));var label=btn.getAttribute('data-reward-label')||'Reward';if(!window.confirm('Redeem '+cost+' points for '+label+'?'))return;changeCustomerLoyalty(-cost,'Redeemed '+label,cost?'reward_redeemed':'manual_adjustment');});});$('customer-loyalty-adjust-form').addEventListener('submit',function(e){e.preventDefault();var pts=Number($('customer-loyalty-adjust-points').value);var note=$('customer-loyalty-adjust-note').value.trim();if(!Number.isInteger(pts)||pts===0){message('Enter a non-zero whole number of points.','error');return;}if(!note){message('Enter a reason for the adjustment.','error');return;}changeCustomerLoyalty(pts,note,'manual_adjustment').then(function(){$('customer-loyalty-adjust-form').reset();});});$('application-settings-form').addEventListener('submit',saveApplicationSettings);$('add-currency-option').addEventListener('click',addCurrencyOption);$('upload-header-image').addEventListener('click',function(){uploadBrandingImage('header_image','header-image-file').catch(function(e){message(e.message,'error');});});$('delete-header-image').addEventListener('click',function(){deleteBrandingImage('header_image').catch(function(e){message(e.message,'error');});});$('upload-banner-image').addEventListener('click',function(){uploadBrandingImage('banner_image','banner-image-file').catch(function(e){message(e.message,'error');});});$('delete-banner-image').addEventListener('click',function(){deleteBrandingImage('banner_image').catch(function(e){message(e.message,'error');});});$('upload-favicon-image').addEventListener('click',function(){uploadBrandingImage('favicon_image','favicon-image-file',2).catch(function(e){message(e.message,'error');});});$('delete-favicon-image').addEventListener('click',function(){deleteBrandingImage('favicon_image').catch(function(e){message(e.message,'error');});});
     WEBSITE_IMAGE_SLOTS.forEach(function(slot){
       var uploadButton = $(slot.uploadId);
       if (uploadButton) uploadButton.addEventListener('click',function(){uploadWebsiteImage(slot).catch(function(e){message(e.message,'error');});});
